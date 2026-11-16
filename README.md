@@ -31,6 +31,25 @@ Copy-Item artifacts/win-x64/RomeoOps.exe artifacts/Romeo-Ops-Launcher.exe
 
 Create a GitHub release at that commit with a tag matching the project version, such as `v2.6.1`. Attach `artifacts/Romeo-Ops-Launcher.exe` and publish it as the latest stable release. The exact filename, tag and GitHub-generated SHA-256 digest are used by the updater.
 
+## Credits
+
+| Project | Creators | Contribution |
+| --- | --- | --- |
+| [S.T.A.L.K.E.R. Anomaly](https://www.moddb.com/mods/stalker-anomaly) | Anomaly Developers and contributors | Standalone game that the ROMEO stack runs on. |
+| [G.A.M.M.A.](https://github.com/Grokitach/Stalker_GAMMA) | Grokitach and the GAMMA mod authors | Anomaly modpack used by ROMEO. |
+| [ROMEO](https://www.patreon.com/cw/clikradproductions) | CLIKRAD Productions and contributors | ROMEO repack and mod profile. |
+| [xrRazom](https://www.moddb.com/mods/xrrazom-stalker-anomaly-co-op) | Harbingerr and the xrRazom team | Optional co-op for Anomaly. |
+| [stalker-gamma-cli](https://github.com/FaithBeam/stalker-gamma-cli) | FaithBeam and contributors | Command-line installer used to set up and verify GAMMA. |
+
+The original S.T.A.L.K.E.R. games were created by [GSC Game World](https://www.gsc-game.com/). The launcher also supports [MeeMaster’s xrRazom add-ons](https://www.moddb.com/mods/xrrazom-stalker-anomaly-co-op/addons) and recognizes Teepo’s Speed Fix in the ROMEO profile.
+
+### Launcher tools and fonts
+
+- The Mod Organizer team’s [Mod Organizer 2](https://github.com/ModOrganizer2/modorganizer) manages mod profiles and launches the game.
+- Igor Pavlov’s [7-Zip](https://www.7-zip.org/) extracts archives. The installer can obtain it through Microsoft’s [Windows Package Manager](https://github.com/microsoft/winget-cli).
+- The launcher uses [.NET](https://github.com/dotnet/runtime) and [WPF](https://github.com/dotnet/wpf) from Microsoft and their contributors. [Windows PowerShell](https://learn.microsoft.com/powershell/scripting/windows-powershell/overview) handles the update restart.
+- The bundled fonts are Barlow Condensed by the Barlow Project Authors, Montserrat by the Montserrat Project Authors, and Cascadia Mono by Microsoft. [Font licenses](src/RomeoOps/Fonts)
+
 ## License
 
 The launcher source code is available under the [MIT License](LICENSE). Font licenses are included in [Fonts](src/RomeoOps/Fonts). Game and mod names, logos, artwork and third-party configuration content belong to their respective owners.

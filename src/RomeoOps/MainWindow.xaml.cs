@@ -169,16 +169,31 @@ public partial class MainWindow : Window
     private void AboutPage()
     {
         const string repository = "https://github.com/itszuff/Romeo-Ops-Launcher";
-        Label(0,100,530,38,"ROMEO OPS LAUNCHER",30,true);
-        Label(0,143,530,30,$"Installed version {InstalledVersion.ToString(3)}",22).Foreground = Red;
-        Label(0,187,510,56,"Install, verify and play the ROMEO stack for S.T.A.L.K.E.R. Anomaly, with GAMMA and optional xrRazom co-op.",20);
-        Action(Page,0,263,155,36,"CHANGELOG",()=>Open(repository + "/releases"));
+        Label(0,90,295,40,"ROMEO OPS LAUNCHER",30,true);
+        Label(310,96,220,30,$"Installed version {InstalledVersion.ToString(3)}",22).Foreground = Red;
+        Label(0,142,510,56,"Install, verify and play the ROMEO stack for S.T.A.L.K.E.R. Anomaly, with GAMMA and optional xrRazom co-op.",20);
+        Action(Page,0,210,120,36,"CHANGELOG",()=>Open(repository + "/releases"));
         if (IsPortableRelease)
-            Outline(Action(Page,163,263,185,36,"CHECK FOR UPDATES",async () => await CheckLauncherUpdate(true)));
-        Put(Page,new Border { Background=Brushes.LightGray },0,331,530,1);
-        Label(0,355,530,35,"COMMUNITY & SOURCE",24,true);
-        Outline(Action(Page,0,401,155,36,"JOIN DISCORD",()=>Open(Pins.DiscordUrl)));
-        Outline(Action(Page,163,401,185,36,"VIEW ON GITHUB",()=>Open(repository)));
+            Outline(Action(Page,126,210,157,36,"CHECK FOR UPDATES",async () => await CheckLauncherUpdate(true)));
+        Outline(Action(Page,289,210,114,36,"JOIN DISCORD",()=>Open(Pins.DiscordUrl)));
+        Outline(Action(Page,409,210,121,36,"VIEW ON GITHUB",()=>Open(repository)));
+        Put(Page,new Border { Background=Brushes.LightGray },0,271,530,1);
+        Label(0,287,530,35,"CREDITS",26,true);
+        var credits = new[] {
+            ("S.T.A.L.K.E.R. Anomaly", "Anomaly Developers"),
+            ("G.A.M.M.A.", "Grokitach and the GAMMA mod authors"),
+            ("ROMEO", "CLIKRAD Productions and contributors"),
+            ("xrRazom", "Harbingerr and the xrRazom team"),
+            ("stalker-gamma-cli", "FaithBeam and contributors")
+        };
+        int y = 336;
+        foreach (var (project, creators) in credits)
+        {
+            Label(0,y,205,30,project,20,true);
+            Label(210,y,320,30,creators,20);
+            y += 35;
+        }
+        Outline(Action(Page,0,534,218,36,"FULL CREDITS & LINKS",()=>Open(repository + "#credits")));
     }
 
     private ExistingStack? DetectInstallation()
