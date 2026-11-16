@@ -38,9 +38,9 @@ public partial class MainWindow : Window
         Width = Height = Math.Min(720, Math.Min(SystemParameters.WorkArea.Height, SystemParameters.WorkArea.Width));
         MouseLeftButtonDown += (_, e) => { if (e.ButtonState == MouseButtonState.Pressed && !e.Handled && (e.GetPosition(Frame).Y < 23 || e.GetPosition(Frame).X < 164)) DragMove(); };
         int index = 0;
-        foreach (string name in new[] { "Play", "Install", "Verify", "Settings", "Support", "Add-ons" })
+        foreach (string name in new[] { "Play", "Install", "Verify", "Settings", "Support", "Add-ons", "About" })
         {
-            var b = Action(Frame, 12, 204 + 42 * index++, 152, 38, name.ToUpperInvariant(), () => Show(name));
+            var b = Action(Frame, 12, 174 + 42 * index++, 152, 38, name.ToUpperInvariant(), () => Show(name));
             b.Style = (Style)FindResource("SidebarButton");
             b.Padding = new Thickness(0); AutomationProperties.SetName(b,name);
             b.HorizontalContentAlignment = HorizontalAlignment.Right;
@@ -129,6 +129,7 @@ public partial class MainWindow : Window
         Label(0,16,500,52,page.ToUpperInvariant(),36,true);
         Put(Page,new Border { Background=Ink },0,74,530,2);
         if (page == "Add-ons") AddonsPage();
+        if (page == "About") AboutPage();
         if (page == "Install" || page == "Verify") OperationPage(page == "Verify");
         if (page == "Play")
         {
@@ -163,6 +164,21 @@ public partial class MainWindow : Window
             if (IsPortableRelease)
                 Outline(Action(Page,0,310,200,34,"CHECK FOR UPDATES",async () => await CheckLauncherUpdate(true)));
         }
+    }
+
+    private void AboutPage()
+    {
+        const string repository = "https://github.com/itszuff/Romeo-Ops-Launcher";
+        Label(0,100,530,38,"ROMEO OPS LAUNCHER",30,true);
+        Label(0,143,530,30,$"Installed version {InstalledVersion.ToString(3)}",22).Foreground = Red;
+        Label(0,187,510,56,"Install, verify and play the ROMEO stack for S.T.A.L.K.E.R. Anomaly, with GAMMA and optional xrRazom co-op.",20);
+        Action(Page,0,263,155,36,"CHANGELOG",()=>Open(repository + "/releases"));
+        if (IsPortableRelease)
+            Outline(Action(Page,163,263,185,36,"CHECK FOR UPDATES",async () => await CheckLauncherUpdate(true)));
+        Put(Page,new Border { Background=Brushes.LightGray },0,331,530,1);
+        Label(0,355,530,35,"COMMUNITY & SOURCE",24,true);
+        Outline(Action(Page,0,401,155,36,"JOIN DISCORD",()=>Open(Pins.DiscordUrl)));
+        Outline(Action(Page,163,401,185,36,"VIEW ON GITHUB",()=>Open(repository)));
     }
 
     private ExistingStack? DetectInstallation()
