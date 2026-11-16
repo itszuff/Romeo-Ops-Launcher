@@ -2,6 +2,8 @@
 
 A portable Windows x64 launcher for installing, verifying and playing the ROMEO stack for S.T.A.L.K.E.R. Anomaly, with GAMMA and optional xrRazom co-op.
 
+![Romeo Ops Launcher settings showing the installation directory and game archive options](docs/images/launcher-settings.png)
+
 ## Install or upgrade
 
 Download [Romeo-Ops-Launcher.exe](https://github.com/itszuff/Romeo-Ops-Launcher/releases/latest/download/Romeo-Ops-Launcher.exe) into a folder where you want to keep the launcher. Open it, choose your game folder and archives in Settings, then open Install. The launcher requests administrator access for installation tasks. The game and mod archives are obtained separately.
