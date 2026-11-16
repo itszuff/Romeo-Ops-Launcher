@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Art\seal.ico</ApplicationIcon>
+    <AssemblyName>RomeoOps</AssemblyName>
+    <Product>Romeo Ops Launcher</Product>
+    <Title>Romeo Ops Launcher</Title>
+    <Version>2.6.1</Version>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="RomeoOps.PortableRelease" Value="true" Condition="'$(PublishSingleFile)' == 'true' and '$(SelfContained)' == 'true'" />
+    <EmbeddedResource Include="Defaults\*.ltx;Defaults\*.tsv" LogicalName="%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Fonts\LICENSE-*.txt" />
+    <Resource Include="Art\*.png;Art\seal.ico;Fonts\*.ttf" />
+  </ItemGroup>
+</Project>
+
+
+
+
+
+
+
+
+

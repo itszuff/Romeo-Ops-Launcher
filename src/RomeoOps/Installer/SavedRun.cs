@@ -1,0 +1,42 @@
+using System.Text.Json;
+
+namespace RomeoOps.Installer;
+
+public sealed class SavedRun
+{
+    public required PipelineRequest Request { get; init; }
+    public HashSet<string> Done { get; init; } = new();
+    public Guid Id { get; init; } = Guid.NewGuid();
+    private static string Record(string root) => Path.Combine(root, "_state", "pending-run.json");
+    public static SavedRun? Read(string root)
+    {
+        var file = Record(root);
+        if (!Path.IsPathFullyQualified(root) || !File.Exists(file)) return null;
+        var run = JsonSerializer.Deserialize<SavedRun>(File.ReadAllText(file)) ?? throw new IOException("Cannot read the saved run.");
+        var layout = InstallLayout.Create(run.Request.AnomalyPath, run.Request.GammaPath);
+        if (!string.Equals(InstallLayout.Normalize(root),layout.Root,StringComparison.OrdinalIgnoreCase))
+            throw new IOException("Saved progress belongs to a different installation directory.");
+        return run;
+    }
+    public static FileStream Lock(InstallLayout layout)
+    {
+        Directory.CreateDirectory(layout.State);
+        try { return new FileStream(Path.Combine(layout.State,"launcher.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+        catch (IOException ex) { throw new IOException("Another launcher operation is using this installation.",ex); }
+    }
+    public void Save(InstallLayout layout)
+    {
+        var path = Record(layout.Root);
+        File.WriteAllText(path + ".new",JsonSerializer.Serialize(this));
+        File.Move(path + ".new",path,true);
+    }
+    public async Task Step(string label, InstallLayout layout, Func<Task> action, Action<string> log, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        if (Done.Contains(label)) { log("Resumed past completed step: " + label); return; }
+        await action().ConfigureAwait(false);
+        Done.Add(label);
+        Save(layout);
+    }
+    public void Finish(InstallLayout layout) => File.Delete(Record(layout.Root));
+}
