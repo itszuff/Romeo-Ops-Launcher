@@ -328,7 +328,15 @@ public partial class MainWindow : Window
     {
         var stack=DetectInstallation();
         bool ready=stack!=null && stack.CoOp && Directory.Exists(Path.Combine(stack.Layout.XrModDir,"gamedata"));
-        Label(0,96,530,56,ready ? "Check a mod to enable it. Missing mods and required dependencies download from ModDB." :
+        var byline = Label(0,86,530,29,"Co-op add-ons by ",21);
+        var author = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run("Mee (MeeMaster)"))
+        {
+            NavigateUri = new Uri("https://www.moddb.com/members/meemaster"), Foreground = Red,
+            ToolTip = "Open Mee's ModDB profile"
+        };
+        author.Click += (_,_) => Open(author.NavigateUri.AbsoluteUri);
+        byline.Inlines.Add(author);
+        Label(0,122,530,51,ready ? "Check a mod to enable it. Missing mods and required dependencies download from ModDB." :
             "Select a ROMEO installation with xrRazom enabled in Settings.",18);
         Info(109,35,"Co-op add-ons","These mods use xrRazom. Enabling DANTE, Persistent Stalkers or Med Bag also enables Master Core. Disable those mods before disabling Master Core.");
         var feedback=Label(0,522,530,75,"",17);
@@ -337,10 +345,13 @@ public partial class MainWindow : Window
         var pending=new List<Task>();
         foreach(var (addon,index) in CoopAddon.Catalog.Select((item,i)=>(item,i)))
         {
-            int y=165+index*68;
+            int y=181+index*65;
             var local=stack==null ? null : InstalledAddon.Detect(stack,addon);
             var check=Put(Page,new CheckBox { Content=addon.Name, FontSize=21,FontFamily=Condensed,
                 IsChecked=local?.Enabled==true, IsEnabled=ready },0,y,350,30);
+            var modPage = Outline(Action(Page,351,y,81,26,"MODDB",()=>Open(addon.PageUrl)));
+            AutomationProperties.SetName(modPage,addon.Name+" on ModDB");
+            modPage.ToolTip = "Open "+addon.Name+" on ModDB";
             var line=Label(21,y+28,400,24,local?.Caption ?? "Not installed",15);
             check.Click+=async (_,_)=>await Change(addon,check.IsChecked==true,false);
             if(local!=null && ready) pending.Add(CheckRelease(addon,local,line,y));
