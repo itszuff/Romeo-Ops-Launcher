@@ -20,6 +20,7 @@ public partial class MainWindow
     private bool checkingRelease;
     private static bool IsPortableRelease => Convert.ToBoolean(AppContext.GetData("RomeoOps.PortableRelease"));
     private bool installingRelease;
+    private bool restartingForUpdate;
 
     private async Task CheckLauncherUpdate(bool manual)
     {
@@ -69,24 +70,25 @@ public partial class MainWindow
             var binary = FileVersionInfo.GetVersionInfo(staged);
             if (binary.ProductName != "Romeo Ops Launcher" || Version.Parse(binary.FileVersion!).ToString(3) != version.ToString())
                 throw new InvalidDataException("The downloaded launcher version does not match the release tag.");
-            using var updateLock = new FileStream(target + ".update-lock", FileMode.OpenOrCreate,
-                FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose);
-            if (Version.Parse(FileVersionInfo.GetVersionInfo(target).FileVersion!) > InstalledVersion)
-                throw new IOException("Another copy already updated this launcher. Please reopen it.");
-            string backup = target + ".previous";
-            File.Replace(staged, target, backup);
-            try
+            SettingsStore.Save(settings);
+            using var script = new StreamReader(typeof(MainWindow).Assembly.GetManifestResourceStream("FinishUpdate.ps1")!);
+            var helper = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe"))
             {
-                using var installed = File.OpenRead(target);
-                await VerifyDigest(installed, digest[7..]);
-                Save();
-                Process.Start(new ProcessStartInfo(target) { UseShellExecute = false, WorkingDirectory = Environment.CurrentDirectory })!.Dispose();
-            }
-            catch
-            {
-                File.Replace(backup, target, staged);
-                throw;
-            }
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = Environment.SystemDirectory
+            };
+            foreach (var argument in new[] { "-NoProfile", "-NonInteractive", "-Command", script.ReadToEnd() })
+                helper.ArgumentList.Add(argument);
+            helper.Environment["ROMEO_UPDATE_PID"] = Environment.ProcessId.ToString();
+            helper.Environment["ROMEO_UPDATE_TARGET"] = target;
+            helper.Environment["ROMEO_UPDATE_STAGE"] = staged;
+            helper.Environment["ROMEO_UPDATE_FROM"] = InstalledVersion.ToString();
+            helper.Environment["ROMEO_UPDATE_CWD"] = Environment.CurrentDirectory;
+            helper.Environment["ROMEO_UPDATE_DIGEST"] = digest[7..];
+            Process.Start(helper)!.Dispose();
+            staged = null;
+            restartingForUpdate = true;
             installingRelease = false;
             Close();
         }

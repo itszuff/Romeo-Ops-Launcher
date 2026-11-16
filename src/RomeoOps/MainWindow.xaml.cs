@@ -492,8 +492,9 @@ public partial class MainWindow : Window
     }
     private void Save()
     {
+        if (restartingForUpdate) return;
         try { SettingsStore.Save(settings); }
-        catch(Exception ex) when(ex is IOException or UnauthorizedAccessException) {MessageBox.Show(this,ex.Message,"Could not save settings");}
+        catch(Exception ex) when(ex is IOException or UnauthorizedAccessException) {MessageBox.Show(this,$"Could not write {SettingsStore.FilePath}\n\n{ex.Message}","Could not save settings");}
     }
     protected override void OnClosing(CancelEventArgs e)
     {

@@ -10,13 +10,14 @@
     <AssemblyName>RomeoOps</AssemblyName>
     <Product>Romeo Ops Launcher</Product>
     <Title>Romeo Ops Launcher</Title>
-    <Version>2.6.2</Version>
+    <Version>2.6.3</Version>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
   <ItemGroup>
     <RuntimeHostConfigurationOption Include="RomeoOps.PortableRelease" Value="true" Condition="'$(PublishSingleFile)' == 'true' and '$(SelfContained)' == 'true'" />
     <EmbeddedResource Include="Defaults\*.ltx;Defaults\*.tsv" LogicalName="%(Filename)%(Extension)" />
     <EmbeddedResource Include="Fonts\LICENSE-*.txt" />
+    <EmbeddedResource Include="FinishUpdate.ps1" LogicalName="FinishUpdate.ps1" />
     <Resource Include="Art\*.png;Art\seal.ico;Fonts\*.ttf" />
   </ItemGroup>
 </Project>

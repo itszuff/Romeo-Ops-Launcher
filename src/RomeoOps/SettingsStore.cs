@@ -122,7 +122,13 @@ public static class SettingsStore
         var directory = Path.GetDirectoryName(FilePath);
         if (!string.IsNullOrEmpty(directory))
             Directory.CreateDirectory(directory);
-        File.WriteAllText(FilePath, JsonSerializer.Serialize(settings, JsonOptions));
+        var pending = FilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(pending, JsonSerializer.Serialize(settings, JsonOptions));
+            File.Move(pending, FilePath, overwrite: true);
+        }
+        finally { File.Delete(pending); }
     }
 }
 
