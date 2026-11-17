@@ -60,25 +60,7 @@ public static class Downloader
             await using (var source = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
             await using (var target = new FileStream(partial, FileMode.Create, FileAccess.Write, FileShare.None))
             {
-                var buffer = new byte[128 * 1024];
-                long got = 0;
-                var clock = System.Diagnostics.Stopwatch.StartNew();
-                var lastReport = TimeSpan.Zero;
-                while (true)
-                {
-                    var read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-                    if (read == 0)
-                        break;
-                    await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
-                    got += read;
-                    if (clock.Elapsed - lastReport > TimeSpan.FromMilliseconds(200))
-                    {
-                        lastReport = clock.Elapsed;
-                        progress?.Invoke(new TransferSnapshot(got, total, got / Math.Max(clock.Elapsed.TotalSeconds, 0.001)));
-                    }
-                }
-
-                progress?.Invoke(new TransferSnapshot(got, total, got / Math.Max(clock.Elapsed.TotalSeconds, 0.001)));
+                await CopyWithProgress(source, target, total, 0, progress, cancellationToken).ConfigureAwait(false);
             }
 
             if (File.Exists(destination))
@@ -93,5 +75,28 @@ public static class Downloader
             }
             throw;
         }
+    }
+
+    internal static async Task CopyWithProgress(Stream source, Stream target, long? total, long got,
+        Action<TransferSnapshot>? progress, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[128 * 1024];
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var lastReport = TimeSpan.Zero;
+        while (true)
+        {
+            var read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+                break;
+            await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+            got += read;
+            if (clock.Elapsed - lastReport > TimeSpan.FromMilliseconds(200))
+            {
+                lastReport = clock.Elapsed;
+                progress?.Invoke(new TransferSnapshot(got, total, got / Math.Max(clock.Elapsed.TotalSeconds, 0.001)));
+            }
+        }
+
+        progress?.Invoke(new TransferSnapshot(got, total, got / Math.Max(clock.Elapsed.TotalSeconds, 0.001)));
     }
 }

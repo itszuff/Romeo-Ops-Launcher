@@ -27,6 +27,7 @@ public partial class MainWindow : Window
     private TextBlock? statusView;
     private ProgressBar? meter;
     private bool closing;
+    private bool verifyOptionsExpanded;
 
     public MainWindow()
     {
@@ -153,10 +154,11 @@ public partial class MainWindow : Window
         }
         if (page == "Support")
         {
-            Label(0,86,515,28,"Get the ROMEO archive or join the community for support.",20);
-            Action(Page,0,120,205,34,"ROMEO DOWNLOADS",ShowRomeoDownloads);
-            Outline(Action(Page,213,120,96,34,"DISCORD",()=>Open(Pins.DiscordUrl)));
-            Outline(Action(Page,317,120,96,34,"PATREON",()=>Open(Pins.PatreonUrl)));
+            Label(0,86,530,28,"Get launcher help in the ROMEO Discord support thread.",20);
+            Action(Page,0,120,155,34,"LAUNCHER SUPPORT",()=>Open(Pins.LauncherSupportUrl));
+            Outline(Action(Page,163,120,152,34,"ROMEO DOWNLOADS",ShowRomeoDownloads));
+            Outline(Action(Page,323,120,112,34,"JOIN DISCORD",()=>Open(Pins.DiscordUrl)));
+            Outline(Action(Page,443,120,87,34,"PATREON",()=>Open(Pins.PatreonUrl)));
             Label(0,176,515,25,"Installer logs include the failing step and the paths used for the run.",18);
             Info(150,214,"Installer logs","Open the latest run’s log folder. The last entries can help identify which step failed when asking for support.");
             Action(Page,0,207,145,34,"OPEN LOG FOLDER",OpenLogs);
@@ -397,13 +399,16 @@ public partial class MainWindow : Window
     }
 
     private Task<string?> PickBrowserDownload(CoopAddon addon)
+        => PickBrowserDownload(addon.Name, addon.PageUrl);
+
+    private Task<string?> PickBrowserDownload(string name, string url)
     {
         return Dispatcher.InvokeAsync(()=>
         {
             if(closing || operation?.IsCancellationRequested==true) return null;
-            if(MessageBox.Show(this,$"The ModDB page for {addon.Name} will open in your browser. Download the ZIP, then select it in the launcher.","Download add-on",MessageBoxButton.OKCancel)!=MessageBoxResult.OK) return null;
-            Open(addon.PageUrl);
-            var picker=new OpenFileDialog {Title="Select the current "+addon.Name+" ZIP from ModDB",Filter="ZIP archives (*.zip)|*.zip"};
+            if(MessageBox.Show(this,$"Open the ModDB page for {name} in your browser? Download the ZIP, then select it in the launcher to continue.","Download from ModDB",MessageBoxButton.OKCancel)!=MessageBoxResult.OK) return null;
+            Open(url);
+            var picker=new OpenFileDialog {Title="Select the "+name+" ZIP from ModDB",Filter="ZIP archives (*.zip)|*.zip"};
             return picker.ShowDialog(this)==true ? picker.FileName : null;
         }).Task;
     }
@@ -438,27 +443,36 @@ public partial class MainWindow : Window
         string sources=$"Anomaly   {settings.AnomalySource}     /     GAMMA   {settings.GammaSource}     /     xrRazom   {(settings.CoOp ? settings.XrSource : "Disabled")}";
         Label(0,86,530,25,verify ? existing?.Layout.Root ?? "Installation directory" : sources,16,true);
         Label(0,115,530,46,verify && !fullRepair ? "Check installed files and fix the MO2 profile. Select a ROMEO .7z in Settings to also restore game and mod files." : archive.Length==0 ? "Choose the ROMEO archive in Settings." : archive,15);
-        if (verify)
+        int row = 160;
+        if (verify && operation != null) verifyOptionsExpanded = false;
+        if (verify && operation == null)
         {
-            void Option(int x,int y,string name,string help,bool initial,Action<bool> change)
+            var toggle = new System.Windows.Controls.Primitives.ToggleButton
             {
-                var c=Put(Page,new CheckBox {Content=name,IsChecked=initial,IsEnabled=operation==null && fullRepair,FontFamily=Condensed,FontSize=15},x,y,double.NaN,25);
-                c.Measure(new Size(245,25));
-                Info(x+c.DesiredSize.Width+4,y-2,name,help);
-                c.Click+=(_,_)=>{change(c.IsChecked==true);Save();};
-            }
-            Option(0,212,"Create per-mod reinstall archives","Create missing per-mod archives for later reinstallation. This uses additional disk space.",settings.CreateSnapshots,v=>settings.CreateSnapshots=v);
-            Option(0,160,"Check MD5","Hash each GAMMA add-on archive during repair. Archives with a mismatched checksum are downloaded again.",settings.VerifyCheckMd5,v=>settings.VerifyCheckMd5=v);
-            Option(260,160,"Recheck large files","Refresh the GAMMA large-files repository during repair. This can require additional downloads.",settings.VerifyLargeFiles,v=>settings.VerifyLargeFiles=v);
-            Option(0,186,"Force Git refresh","Download GitHub add-on archives again and refresh the setup repositories during repair.",settings.VerifyForceGit,v=>settings.VerifyForceGit=v);
-            Option(260,186,"Force extraction","Extract GAMMA archives again during repair, including archives whose checksums already match.",settings.VerifyForceExtract,v=>settings.VerifyForceExtract=v);
+                Content = verifyOptionsExpanded ? "Hide verify options" : "Show verify options",
+                IsChecked = verifyOptionsExpanded, FontFamily = ActionFont, FontSize = 16
+            };
+            Put(Page, toggle, 0, row, 148, 28);
+            toggle.Click += (_, _) =>
+            {
+                verifyOptionsExpanded = toggle.IsChecked == true;
+                Show("Verify");
+                Keyboard.Focus(Page.Children.OfType<System.Windows.Controls.Primitives.ToggleButton>().First());
+            };
+            row += 35;
+            if (verifyOptionsExpanded) row += ShowVerifyOptions(fullRepair, row) + 8;
         }
-        int row=verify ? 245:160;
         if(operation!=null) Action(Page,0,row,130,35,scanning ? "CANCEL SCAN":"STOP AND SAVE",()=>operation?.Cancel());
         else if(problems.Count>0) Action(Page,0,row,130,35,"OPEN SETTINGS",()=>Show("Settings"));
         else Action(Page,0,row,168,35,resume ? "RESUME "+pending!.Request.Mode.ToString().ToUpperInvariant() : verify ? "SCAN INSTALLATION" : "START INSTALLATION",()=>{if(verify && !resume) Scan(existing!); else Run(verify);});
         if (verify && existing != null && pending == null && operation == null)
-            Outline(Action(Page,205,row,215,35,"PURGE UNUSED MOD FILES",()=>ShowModPurge(existing)));
+        {
+            const string help = "Preview disabled mod folders and the space you could reclaim. Mods enabled in another profile are excluded by default. Choose Permanently Delete to remove the folders listed in the preview.";
+            var purge = Outline(Action(Page,205,row,215,35,"PURGE UNUSED MOD FILES",()=>ShowModPurge(existing)));
+            purge.ToolTip = new TextBlock { Text = help, MaxWidth = 285, TextWrapping = TextWrapping.Wrap };
+            AutomationProperties.SetHelpText(purge, help);
+            Info(424,row+7,"Purge unused mod files",help);
+        }
         if (resume && operation==null)
             Action(Page,180,row,192,35,"CLEAR SAVED PROGRESS",()=>
             {
@@ -484,10 +498,106 @@ public partial class MainWindow : Window
             Info(135,row+7,scanning ? "Cancel scan" : "Stop and save",scanning ? "Stop reading the installation files." : "Stop this run and keep its checkpoint so you can resume later.");
         else if (problems.Count==0)
             Info(173,row+7,verify ? "Scan installation" : "Start installation",verify ? "Scan reads your installation and shows a repair plan. Select a ROMEO archive in Settings to enable full repair and the GAMMA options above." : "Begin installing into the selected directory with the sources shown above. You can stop the run and resume from its checkpoint.");
-        statusView=Label(0,row+46,528,58,problems.Count>0 ? string.Join(" ",problems) : resume && operation==null ? status+"  Saved steps: "+(pending!.Done.Count==0 ? "starting stage" : string.Join(", ",pending.Done)) : status,16);
-        meter=Put(Page,new ProgressBar {Minimum=0,Maximum=100,Value=percent,Foreground=Red,Background=Brushes.WhiteSmoke},0,row+108,530,5);
-        Put(Page,journal,0,row+127,530,595-row-127);
+        string message=problems.Count>0 ? string.Join(" ",problems) : resume && operation==null ? status+"  Saved steps: "+(pending!.Done.Count==0 ? "starting stage" : string.Join(", ",pending.Done)) : status;
+        statusView=Label(0,row+42,528,58,message,16);
+        double meterY = row + 108;
+        if (verify && operation == null)
+        {
+            statusView.Height = double.NaN;
+            statusView.MaxHeight = 58;
+            statusView.Measure(new Size(528,58));
+            meterY = row + 44 + (message.Length == 0 ? 0 : statusView.DesiredSize.Height);
+        }
+        meter=Put(Page,new ProgressBar {Minimum=0,Maximum=100,Value=percent,Foreground=Red,Background=Brushes.WhiteSmoke},0,meterY,530,5);
+        Put(Page,journal,0,meterY+10,530,Math.Max(0,595-meterY-10));
     }
+    private int ShowVerifyOptions(bool fullRepair, int top)
+    {
+        var options = new StackPanel();
+        const int height = 178;
+        Put(Page, new ScrollViewer { Content = options, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }, 0, top, 530, height);
+        var components = new Grid { Margin = new Thickness(0, 0, 0, 8) };
+        components.ColumnDefinitions.Add(new ColumnDefinition());
+        components.ColumnDefinitions.Add(new ColumnDefinition());
+        options.Children.Add(components);
+
+        void ComponentSection(int column, string title, string summary, string linkText, string page)
+        {
+            var section = new StackPanel { Margin = new Thickness(0, 0, 12, 0) };
+            Grid.SetColumn(section, column);
+            components.Children.Add(section);
+            section.Children.Add(new TextBlock { Text = title, FontFamily = ActionFont, FontSize = 16, Foreground = Red });
+            var body = new TextBlock { FontFamily = Condensed, FontSize = 15, Foreground = Ink, TextWrapping = TextWrapping.Wrap };
+            body.Inlines.Add(summary);
+            body.Inlines.Add(new System.Windows.Documents.LineBreak());
+            var link = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run(linkText)) { Foreground = Ink };
+            link.Click += (_, _) => Show(page);
+            body.Inlines.Add(link);
+            section.Children.Add(body);
+        }
+
+        string xrSummary = !settings.CoOp ? "Disabled in Settings. Full repair disables co-op in the profile."
+            : settings.XrSource == "Local" ? "Local ZIP selected. Scan checks co-op files and profile. Full repair uses your ZIP."
+            : "Download selected. Scan checks co-op files and profile. Full repair gets the ZIP if needed.";
+        ComponentSection(0, "xrRazom", xrSummary, "Change source", "Settings");
+        ComponentSection(1, "Co-op add-ons", "Scan flags missing folders for enabled mods. Install or update MeeMaster mods on the Add-ons page.",
+            "Open Add-ons", "Add-ons");
+
+        options.Children.Add(new TextBlock
+        {
+            Text = "Options apply when you choose Run Full Repair.",
+            FontFamily = Condensed, FontSize = 15, Foreground = Ink
+        });
+
+        void Group(string title)
+        {
+            options.Children.Add(new TextBlock
+            {
+                Text = title, FontFamily = ActionFont, FontSize = 16, Foreground = Red,
+                Margin = new Thickness(0, 5, 0, 1)
+            });
+        }
+
+        void Option(string name, string use, bool selected, Action<bool> change)
+        {
+            var content = new Grid { Width = 482 };
+            content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(169) });
+            content.ColumnDefinitions.Add(new ColumnDefinition());
+            content.Children.Add(new TextBlock { Text = name, FontFamily = ActionFont, FontSize = 15 });
+            var description = new TextBlock { Text = use, FontSize = 15, TextWrapping = TextWrapping.Wrap };
+            Grid.SetColumn(description, 1);
+            content.Children.Add(description);
+            var check = new CheckBox
+            {
+                Content = content, FontFamily = Condensed, IsChecked = selected, IsEnabled = fullRepair,
+                VerticalContentAlignment = VerticalAlignment.Center, MinHeight = 23
+            };
+            AutomationProperties.SetName(check, name);
+            AutomationProperties.SetHelpText(check, use);
+            check.Click += (_, _) => { change(check.IsChecked == true); Save(); };
+            options.Children.Add(check);
+        }
+
+        Group("Repair GAMMA files");
+        Option("Check archive hashes (MD5)", "Use if a GAMMA add-on download may be corrupt.",
+            settings.VerifyCheckMd5, v => settings.VerifyCheckMd5 = v);
+        Option("Extract archives again", "Use if installed mod files are missing or were edited.",
+            settings.VerifyForceExtract, v => settings.VerifyForceExtract = v);
+
+        Group("Refresh GAMMA downloads");
+        Option("Refresh GitHub files", "Use if GitHub add-ons or setup repositories are out of date.",
+            settings.VerifyForceGit, v => settings.VerifyForceGit = v);
+        Option("Refresh large files", "Use if the GAMMA large-files download was interrupted or is stale.",
+            settings.VerifyLargeFiles, v => settings.VerifyLargeFiles = v);
+
+        Group("Reinstall individual mods");
+        Option("Save per-mod archives", "Use to reinstall ROMEO mods later in MO2. Uses extra disk space.",
+            settings.CreateSnapshots, v => settings.CreateSnapshots = v);
+
+        return height;
+    }
+
     private async void Run(bool verify)
     {
         if(operation!=null) return;
@@ -507,6 +617,7 @@ public partial class MainWindow : Window
             CreateSnapshots=settings.CreateSnapshots,PreserveUser=settings.PreserveUser,PreserveMcm=settings.PreserveMcm,
             VerifyCheckMd5=settings.VerifyCheckMd5,VerifyLargeFiles=settings.VerifyLargeFiles,VerifyForceExtract=settings.VerifyForceExtract,VerifyForceGit=settings.VerifyForceGit };
         var engine=new InstallPipeline(new PipelineCallbacks {
+            PickXrArchive=()=>PickBrowserDownload("xrRazom 1.5 Slim", Pins.XrReferer),
             Log=line=>Dispatcher.Invoke(()=>journal.Add(line.Display)),
             Progress=p=>Dispatcher.Invoke(()=>{percent=Math.Clamp(p.Percent,0,100); status=$"{percent}%   {p.Step}\n{p.Detail}"; if(statusView!=null) statusView.Text=status; if(meter!=null) meter.Value=percent;}),
             Confirm=message=>Dispatcher.Invoke(()=>MessageBox.Show(this,message,"ROMEO OPS",MessageBoxButton.YesNo,MessageBoxImage.Question)==MessageBoxResult.Yes)

@@ -84,6 +84,7 @@ public sealed record PipelineResult
 
 public sealed class PipelineCallbacks
 {
+    public Func<Task<string?>>? PickXrArchive { get; init; }
     public required Action<LogLine> Log { get; init; }
     public required Action<ProgressReport> Progress { get; init; }
     public required Func<string, bool> Confirm { get; init; }

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.9.3 (2026-11-17)
+
+- Resolve fresh ModDB mirror links for xrRazom and retry once when a mirror expires.
+- When an automated xrRazom download fails, offer a browser download and ZIP picker to continue the installation. Completed stages remain saved, and the selected ZIP must pass checksum validation.
+- Clarify recovery for stopped installs: select Settings → xrRazom → Local, choose xrRazom-1.5-Slim.zip, then Resume Install.
+- Add a direct Launcher Support link to the ROMEO Discord support thread.
+- Group full-repair settings in an expandable Verify options panel, with clearer descriptions and links to xrRazom settings and co-op add-ons.
+
 ## 2.9.0 (2026-11-16)
 
 - Choose **Play → Compare with Friend → Match Loaded JSON** to back up the MO2 profile, enable available mods, disable extras and apply a friend's load order. The launcher compares again afterward and lists remaining differences.

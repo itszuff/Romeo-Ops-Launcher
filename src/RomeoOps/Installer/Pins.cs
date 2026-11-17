@@ -8,7 +8,6 @@ public static class Pins
     public const string CliHash = "e7fb059f564bb08da6dab0db98e3cb0f4ec5e47265a79794b4cbd6483c90b84e";
     public const string CliProfile = "stalker-romeo-xrrazom";
 
-    public const string XrUrl = "https://www.moddb.com/addons/start/314090";
     public const string XrReferer = "https://www.moddb.com/mods/stalker-anomaly/addons/xrrazom-stalker-anomaly-co-op-slim";
     public const string XrMd5 = "9bf05e45157e29009446577a6a0d6b84";
     public const string XrFileName = "xrRazom-1.5-Slim.zip";
@@ -23,6 +22,7 @@ public static class Pins
     public const string AnomalyUrl = "https://www.moddb.com/downloads/mirror/27740";
     public const string GammaUrl = "https://github.com/Grokitach/Stalker_GAMMA";
     public const string DiscordUrl = "https://discord.com/invite/t8m3pc67f6";
+    public const string LauncherSupportUrl = "https://discord.com/channels/1186516148339081246/1572000028719972432";
     public const string PatreonUrl = "https://www.patreon.com/cw/clikradproductions";
     public const string RomeoDriveUrl = "https://drive.google.com/drive/folders/1ReY5hMyye4mC3VVYsWxCnJ81QXFsVEt7?usp=sharing";
     public const string RomeoMirrorUrl = "https://fuckingfast.net/nsueejm6073r";

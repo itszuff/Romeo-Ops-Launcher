@@ -757,19 +757,49 @@ public class InstallerTests
         Assert.DoesNotContain("Shared mod priority",setup.Compare(setup with {LoadOrder=new[]{"Other","Alpha","Beta","Gamma"}}));
     }
 
-    private sealed class MirrorFixture(byte[] payload) : System.Net.Http.HttpMessageHandler
+    private sealed class MirrorFixture(byte[] payload, int expiredMirrors = 0) : System.Net.Http.HttpMessageHandler
     {
+        public int StartRequests { get; private set; }
         protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(System.Net.Http.HttpRequestMessage request,CancellationToken token)
         {
             var hash=Convert.ToHexString(System.Security.Cryptography.MD5.HashData(payload));
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.StartsWith("/downloads/mirror/") && StartRequests <= expiredMirrors)
+                return Task.FromResult(new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.Gone){RequestMessage=request});
             System.Net.Http.HttpContent content=request.RequestUri!.AbsolutePath switch
             {
-                "/addons/start/4321" => new System.Net.Http.StringContent("<a href='/addons/mirror/4321/1'>Mirror</a>"),
-                "/addons/mirror/4321/1" => new System.Net.Http.ByteArrayContent(payload),
+                "/addons/start/4321" => new System.Net.Http.StringContent($"<a href='/downloads/mirror/4321/{++StartRequests}'>Mirror</a>"),
+                _ when path == $"/downloads/mirror/4321/{StartRequests}" => new System.Net.Http.ByteArrayContent(payload),
                 _ => new System.Net.Http.StringContent($"<h5>MD5 Hash</h5><span>{hash}</span><a href='/addons/start/4321'>Download Now</a>")
             };
             return Task.FromResult(new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK){RequestMessage=request,Content=content});
         }
+    }
+
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    [InlineData(2, true)]
+    [InlineData(0, false)]
+    public async Task PinnedModDbDownloadResolvesFreshMirrorAndChecksPinnedHash(int expired, bool correctHash)
+    {
+        byte[] payload = [80, 75, 3, 4, 12, 34];
+        var fixture = new MirrorFixture(payload, expired);
+        using var http = new System.Net.Http.HttpClient(fixture);
+        var folder = TempDir();
+        var destination = Path.Combine(folder, "xr.zip");
+        var hash = correctHash ? Convert.ToHexString(System.Security.Cryptography.MD5.HashData(payload)) : new string('0', 32);
+        var download = ModDbRelease.FetchPinned(http, Pins.XrReferer, destination, hash, default);
+        if (!correctHash) await Assert.ThrowsAsync<InvalidDataException>(() => download);
+        else if (expired == 2) await Assert.ThrowsAsync<System.Net.Http.HttpRequestException>(() => download);
+        else
+        {
+            await download;
+            Assert.Equal(payload, File.ReadAllBytes(destination));
+        }
+        Assert.Equal(Math.Min(expired + 1, 2), fixture.StartRequests);
+        Assert.Equal(correctHash && expired < 2, File.Exists(destination));
+        Assert.Empty(Directory.GetFiles(folder, "*.partial"));
     }
 
     [Fact]

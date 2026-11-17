@@ -17,6 +17,8 @@ Version 2.6.1 checks for updates from this repository. If you have 2.6.0 or earl
 
 - Choose the installation folder in **Settings**. Download Anomaly and GAMMA or supply local archives, then select the ROMEO `.7z`. For co-op, download xrRazom Slim or select its ZIP. Choose **Disable** for solo play.
 - If the launcher detects an existing ROMEO installation, **Verify / Fix Installation** opens its repair tools. During an install or repair, **Stop and Save** records a checkpoint. Resume from the last completed stage, or clear the checkpoint to choose new settings.
+- If the automated xrRazom download fails, the launcher offers to open ModDB so you can download and select the ZIP to continue. For an already stopped installation, download `xrRazom-1.5-Slim.zip`, choose **Settings → xrRazom → Local**, select the ZIP, then click **Resume Install**. Keep saved progress to skip completed stages. The selected ZIP must match the pinned release checksum.
+- For launcher help, select **Support → Launcher Support** to open the [launcher support thread on the ROMEO Discord](https://discord.com/channels/1186516148339081246/1572000028719972432).
 - Follow progress in the live journal. **Support → Open Log Folder** opens the full run logs. **Support → ROMEO Downloads** offers the Drive, mirror and torrent links, plus the Discord release channel and Drive download-limit guide.
 - **Play → Open Mod Organizer** opens MO2. Select the ROMEO profile and run Anomaly (DX11). For co-op, set your xrRazom player name and network options in the game's settings.
 

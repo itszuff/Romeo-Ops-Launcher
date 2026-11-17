@@ -1,6 +1,5 @@
 ﻿using System.Diagnostics;
 using System.IO;
-using System.Net;
 using System.Net.Http;
 using System.Security.Principal;
 using System.Text;
@@ -745,32 +744,31 @@ public sealed class InstallPipeline
         _log.Info("Attempting the official ModDB download for xrRazom 1.5 Slim.");
         try
         {
-            await Downloader.DownloadAsync(
-                http,
-                Pins.XrUrl,
-                path,
-                cancellationToken,
-                new Dictionary<string, string>
-                {
-                    ["User-Agent"] = "Mozilla/5.0",
-                    ["Referer"] = Pins.XrReferer
-                },
+            await ModDbRelease.FetchPinned(http, Pins.XrReferer, path, Pins.XrMd5, cancellationToken,
                 snap =>
                 {
                     var pct = snap.Total is > 0 ? (int)(snap.Got * 100 / snap.Total.Value) : 0;
                     ReportChild(pct, snap.Format());
                 }).ConfigureAwait(false);
-            FileHasher.AssertMatch(path, "MD5", Pins.XrMd5);
             return path;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && _callbacks.PickXrArchive != null &&
+            ex is HttpRequestException or IOException or InvalidDataException or TaskCanceledException)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _log.Warning("Automated xrRazom download failed. Select the browser-downloaded ZIP to continue this run. Completed stages are saved.");
+            _log.Detail(ex.Message);
+            var local = await _callbacks.PickXrArchive().ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (local == null) throw new OperationCanceledException("Browser download cancelled.");
+            FileHasher.AssertMatch(local, "MD5", Pins.XrMd5);
+            _log.Info("Verified the selected xrRazom archive.");
+            return local;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            if (File.Exists(path))
-            {
-                try { File.Delete(path); } catch { }
-            }
             throw new PipelineException(
-                $"Automated ModDB download failed or returned an unexpected file. Download xrRazom-1.5-Slim.zip from {Pins.XrReferer} and choose it with Browse. Details: {ex.Message}",
+                $"Automated ModDB download failed or returned an unexpected file. Download xrRazom-1.5-Slim.zip from {Pins.XrReferer}, select Settings > xrRazom > Local, choose the ZIP, then Resume Install. Completed stages are saved. Details: {ex.Message}",
                 ex);
         }
     }

@@ -37,32 +37,7 @@ public static class ModDbRelease
             var match=Md5.Match(html);
             if (!match.Success) throw new InvalidDataException("Could not read the current release checksum.");
             checksum=match.Groups[1].Value;
-            var url=FindLink(html,new Uri(addon.PageUrl),true) ?? throw new InvalidDataException("Download link unavailable.");
-            var referer=addon.PageUrl;
-            for(int hop=0;hop<5;hop++)
-            {
-                using var response=await Get(client ?? Http,url.AbsoluteUri,referer,token);
-                var final=response.RequestMessage!.RequestUri!;
-                if(!Trusted(final)) throw new InvalidDataException("Unrecognized mirror host.");
-                using var input=await response.Content.ReadAsStreamAsync(token);
-                var header=new byte[4];
-                await input.ReadExactlyAsync(header,token);
-                if (header.SequenceEqual(new byte[]{80,75,3,4}))
-                {
-                    await using(var output=File.Create(destination))
-                    {
-                        await output.WriteAsync(header,token);
-                        await input.CopyToAsync(output,token);
-                    }
-                    FileHasher.AssertMatch(destination,"MD5",checksum);
-                    return;
-                }
-                using var reader=new StreamReader(input);
-                var markup=System.Text.Encoding.ASCII.GetString(header)+await reader.ReadToEndAsync(token);
-                url=FindLink(markup,final,false) ?? throw new InvalidDataException("ModDB requires a browser to choose a mirror.");
-                referer=final.AbsoluteUri;
-            }
-            throw new IOException("ModDB returned too many mirror pages.");
+            await DownloadFromPage(client ?? Http, addon.PageUrl, html, destination, checksum, token, null);
         }
         catch(Exception ex) when(!token.IsCancellationRequested && ex is HttpRequestException or IOException or InvalidDataException or TaskCanceledException)
         {
@@ -73,6 +48,62 @@ public static class ModDbRelease
             File.Copy(local,destination,true);
             if(checksum!=null) FileHasher.AssertMatch(destination,"MD5",checksum);
         }
+    }
+    public static async Task FetchPinned(HttpClient client, string pageUrl, string destination, string expectedMd5,
+        CancellationToken token, Action<TransferSnapshot>? progress = null)
+    {
+        var partial = destination + "." + Guid.NewGuid().ToString("N") + ".partial";
+        try
+        {
+            for (int attempt = 0; ; attempt++)
+            {
+                using var page = await Get(client, pageUrl, null, token);
+                var html = await page.Content.ReadAsStringAsync(token);
+                try
+                {
+                    await DownloadFromPage(client, pageUrl, html, partial, expectedMd5, token, progress);
+                    token.ThrowIfCancellationRequested();
+                    File.Move(partial, destination, true);
+                    return;
+                }
+                catch (HttpRequestException ex) when (attempt == 0 && ex.StatusCode == HttpStatusCode.Gone)
+                {
+                    // ModDB issues mirror links from the start page. Resolve a new link once.
+                }
+            }
+        }
+        finally { File.Delete(partial); }
+    }
+
+    private static async Task DownloadFromPage(HttpClient client, string pageUrl, string html, string destination,
+        string checksum, CancellationToken token, Action<TransferSnapshot>? progress)
+    {
+        var url=FindLink(html,new Uri(pageUrl),true) ?? throw new InvalidDataException("Download link unavailable.");
+        var referer=pageUrl;
+        for(int hop=0;hop<5;hop++)
+        {
+            using var response=await Get(client,url.AbsoluteUri,referer,token);
+            var final=response.RequestMessage!.RequestUri!;
+            if(!Trusted(final)) throw new InvalidDataException("Unrecognized mirror host.");
+            using var input=await response.Content.ReadAsStreamAsync(token);
+            var header=new byte[4];
+            await input.ReadExactlyAsync(header,token);
+            if (header.SequenceEqual(new byte[]{80,75,3,4}))
+            {
+                await using(var output=File.Create(destination))
+                {
+                    await output.WriteAsync(header,token);
+                    await Downloader.CopyWithProgress(input, output, response.Content.Headers.ContentLength, header.Length, progress, token);
+                }
+                FileHasher.AssertMatch(destination,"MD5",checksum);
+                return;
+            }
+            using var reader=new StreamReader(input);
+            var markup=System.Text.Encoding.ASCII.GetString(header)+await reader.ReadToEndAsync(token);
+            url=FindLink(markup,final,false) ?? throw new InvalidDataException("ModDB requires a browser to choose a mirror.");
+            referer=final.AbsoluteUri;
+        }
+        throw new IOException("ModDB returned too many mirror pages.");
     }
     private static async Task<HttpResponseMessage> Get(HttpClient client,string url,string? referer,CancellationToken token)
     {
