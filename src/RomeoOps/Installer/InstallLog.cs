@@ -20,6 +20,7 @@ public sealed class InstallLog : IDisposable
         {
             AutoFlush = true
         };
+        Info("Romeo Ops Launcher version " + typeof(InstallLog).Assembly.GetName().Version!.ToString(3));
     }
 
     public void Info(string message) => Write(message, LogKind.Info);

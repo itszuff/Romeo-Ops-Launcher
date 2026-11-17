@@ -51,6 +51,20 @@ public static class ModlistEditor
         }
     }
 
+    public static void Disable(string path, string name)
+    {
+        var encoding = EncodingFor(path);
+        var lines = File.ReadAllLines(path, encoding);
+        bool changed = false;
+        for (int i = 0; i < lines.Length; i++)
+        {
+            if (!lines[i].Equals("+" + name, StringComparison.OrdinalIgnoreCase)) continue;
+            lines[i] = "-" + lines[i][1..];
+            changed = true;
+        }
+        if (changed) File.WriteAllLines(path, lines, encoding);
+    }
+
     public static IReadOnlyList<string> TopMods(string path, int count)
     {
         var encoding = EncodingFor(path);

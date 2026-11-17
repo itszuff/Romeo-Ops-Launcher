@@ -10,11 +10,17 @@ public sealed record ExistingStack(InstallLayout Layout, string Profile, bool Co
 
     public string RomeoArchive(string selected)
     {
-        var retained = Path.Combine(Layout.Gamma, "downloads", Pins.RomeoArchiveFile);
+        return ResolveRomeoArchive(Layout, selected);
+    }
+
+    public static string ResolveRomeoArchive(InstallLayout layout, string selected)
+    {
+        if (File.Exists(selected)) return selected;
+        var retained = Path.Combine(layout.Gamma, "downloads", Pins.RomeoArchiveFile);
         if (File.Exists(retained)) return retained;
-        var cached = Path.Combine(Layout.Cache, Pins.RomeoArchiveFile);
+        var cached = Path.Combine(layout.Cache, Pins.RomeoArchiveFile);
         if (File.Exists(cached)) return cached;
-        return File.Exists(selected) ? selected : "";
+        return "";
     }
 
     public static ExistingStack? Detect(string root,bool allowIncomplete = false)

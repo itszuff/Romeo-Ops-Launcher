@@ -55,6 +55,9 @@ public static class InstallationScan
         else
         {
             var enabled = File.ReadLines(stack.Profile).Where(s=>s.StartsWith('+')).Select(s=>s[1..]).ToArray();
+            bool xrEnabled = enabled.Contains(Pins.XrModName, StringComparer.OrdinalIgnoreCase);
+            if (xrEnabled != stack.CoOp)
+                issues.Add(stack.CoOp ? "Enable xrRazom in the ROMEO profile." : "Disable xrRazom in the ROMEO profile.");
             foreach(var name in enabled)
                 if(!Directory.Exists(Path.Combine(layout.Gamma,"mods",name))) issues.Add("Restore missing enabled mod folder: "+name);
             if (!File.ReadLines(stack.Profile).Any(line => line.Length > 1 && line[1..].Equals(CoopAddon.LauncherSeparator, StringComparison.OrdinalIgnoreCase))

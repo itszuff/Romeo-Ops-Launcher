@@ -7,6 +7,62 @@ namespace RomeoOps.Tests;
 public class InstallerTests
 {
     [Fact]
+    public async Task FailedXrDownloadResumesWithLocalZipAndCompletedStages()
+    {
+        var root = TempDir();
+        var layout = InstallLayout.Create(Path.Combine(root, "Anomaly"), Path.Combine(root, "GAMMA"));
+        Directory.CreateDirectory(layout.State);
+        var request = new PipelineRequest { AnomalyPath = layout.Anomaly, GammaPath = layout.Gamma, RomeoArchive = "romeo.7z", InstallCoOp = true };
+        var failed = new SavedRun { Request = request, Done = { "Anomaly files", "GAMMA files", "ROMEO files" } };
+        failed.Save(layout);
+        var checkpoint = SavedRun.Read(root)!;
+        var settings = new AppSettings { CoOp = true, XrSource = "Local", XrArchive = Path.Combine(root, "xrRazom-1.5-Slim.zip") };
+        var resumed = SavedRun.ForRequest(checkpoint.ResumeInstall(settings), checkpoint);
+        resumed.Save(layout);
+        resumed = SavedRun.Read(root)!;
+        Assert.Equal(failed.Id, resumed.Id);
+        Assert.Equal(settings.XrArchive, resumed.Request.XrArchive);
+        Assert.True(failed.Done.SetEquals(resumed.Done));
+        foreach (var stage in failed.Done)
+            await resumed.Step(stage, layout, () => throw new Exception("Repeated " + stage), _ => {}, default);
+        bool ran = false;
+        await resumed.Step("xrRazom files", layout, () => { ran = true; return Task.CompletedTask; }, _ => {}, default);
+        Assert.True(ran);
+    }
+
+    [Theory]
+    [InlineData(true, "Download")]
+    [InlineData(true, "Local")]
+    [InlineData(false, "Local")]
+    public void VerifyUsesCurrentSourcesWhenResuming(bool enable, string source)
+    {
+        var root = TempDir();
+        var layout = InstallLayout.Create(Path.Combine(root, "Anomaly"), Path.Combine(root, "GAMMA"));
+        var settings = new AppSettings { CoOp = !enable, XrArchive = Path.Combine(root, "xr.zip") };
+        var old = new SavedRun { Request = VerifyPlan.FromSettings(settings, layout), Done = { "xrRazom files" } };
+        settings.CoOp = enable;
+        settings.XrSource = source;
+        settings.VerifyForceGit = true;
+        var request = VerifyPlan.FromSettings(settings, layout);
+        var resumed = SavedRun.ForRequest(request, old);
+        Assert.Equal(enable, resumed.Request.InstallCoOp);
+        Assert.Equal(enable && source == "Local" ? settings.XrArchive : null, resumed.Request.XrArchive);
+        Assert.True(resumed.RefreshGammaResume);
+        Assert.Empty(resumed.Done);
+        Assert.Equal(old.Id, resumed.Id);
+        Assert.Same(resumed, SavedRun.ForRequest(request, resumed));
+    }
+
+    [Fact]
+    public void ChangedGammaChecksDropPreviouslySkippedRepositories()
+    {
+        var gamma = TempDir();
+        VerifyResume.Prepare(gamma, new[] { "Stalker_GAMMA | " });
+        VerifyResume.Prepare(gamma, Array.Empty<string>(), fresh: true);
+        Assert.Equal((0, 0), GammaResume.ReadProgress(gamma));
+    }
+
+    [Fact]
     public void ModlistMovesNamedModToTopAndKeepsHeaders()
     {
         var path = TempFile();

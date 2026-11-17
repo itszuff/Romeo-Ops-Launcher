@@ -76,7 +76,7 @@ public partial class MainWindow
         string? findings=null;
         try
         {
-            findings=await Task.Run(()=>InstallationScan.Inspect(stack,stop.Token,(value,file)=>Dispatcher.Invoke(()=>
+            findings=await Task.Run(()=>InstallationScan.Inspect(stack with { CoOp = settings.CoOp },stop.Token,(value,file)=>Dispatcher.Invoke(()=>
             {
                 percent=value;
                 if(meter!=null) meter.Value=value;
@@ -92,9 +92,19 @@ public partial class MainWindow
         Show("Verify");
         if(findings==null) return;
         bool full=stack.RomeoArchive(settings.RomeoArchive).Length>0;
-        bool possible=full || File.Exists(stack.Profile);
-        string scope=full ? "Full repair rechecks Anomaly, applies the selected GAMMA checks, reapplies ROMEO"+
-            (stack.CoOp?" and xrRazom":"")+", and repairs the MO2 profile." : "Profile repair checks installed folders and repairs MO2 configuration. Restoring payload files requires the ROMEO archive.";
+        bool possible=full || (File.Exists(stack.Profile) && settings.CoOp == stack.CoOp);
+        string scope = full ? "Full repair rechecks Anomaly, applies the selected GAMMA checks, reapplies ROMEO and repairs the MO2 profile."
+            : "Profile repair checks installed folders and repairs MO2 configuration. Restoring payload files requires the ROMEO archive.";
+        if (full)
+        {
+            if (settings.AnomalySource == "Local") scope += " The selected local Anomaly archive will be imported.";
+            if (settings.GammaSource == "Local") scope += " The selected local GAMMA archive will be imported.";
+            scope += !settings.CoOp ? " xrRazom will be disabled in the profile."
+                : settings.XrSource == "Local" ? " xrRazom will be installed from the selected ZIP."
+                : " The launcher will download xrRazom if its archive is missing.";
+        }
+        if (!full && settings.CoOp != stack.CoOp)
+            scope = "Select the ROMEO .7z in Settings to apply the xrRazom change with a full repair.";
         if(full && !settings.VerifyCheckMd5 && !settings.VerifyForceGit && !settings.VerifyForceExtract && !settings.VerifyLargeFiles)
             scope+=" GAMMA addon checks are off.";
         if(full && settings.CreateSnapshots) scope+=" Missing per-mod reinstall archives will be created.";

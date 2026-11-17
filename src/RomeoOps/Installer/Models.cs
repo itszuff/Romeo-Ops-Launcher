@@ -53,7 +53,7 @@ public sealed class PipelineException : Exception
     public PipelineException(string message, Exception inner) : base(message, inner) { }
 }
 
-public sealed class PipelineRequest
+public sealed record PipelineRequest
 {
     public required string AnomalyPath { get; init; }
     public required string GammaPath { get; init; }

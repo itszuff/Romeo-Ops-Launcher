@@ -40,8 +40,7 @@ public sealed class InstallPipeline
             var layout = InstallLayout.Create(request.AnomalyPath,request.GammaPath);
             using var gate = SavedRun.Lock(layout);
             var pending = SavedRun.Read(layout.Root);
-            if (pending != null && System.Text.Json.JsonSerializer.Serialize(request) != System.Text.Json.JsonSerializer.Serialize(pending.Request))
-                throw new PipelineException("Resume the saved operation from its original page.");
+            _run = SavedRun.ForRequest(request, pending);
             if (pending == null && request.Mode == PipelineMode.Install && ExistingStack.HasInstallation(layout))
                 throw new PipelineException("An installation already exists here. Use Verify / Fix.");
             EnsureGameIsClosed();
@@ -50,7 +49,6 @@ public sealed class InstallPipeline
                 RequireMachine();
                 RequireRomeoArchive(request.RomeoArchive);
             }
-            _run = pending ?? new SavedRun { Request=request };
             var backup = PlayerOptions.Capture(layout,_run.Id);
             _run.Save(layout);
             PipelineResult result;
@@ -96,7 +94,7 @@ public sealed class InstallPipeline
 
         bool profileOnly = request.Mode == PipelineMode.Verify && string.IsNullOrEmpty(request.RomeoArchive);
         if (!profileOnly) { RequireMachine(); RequireRomeoArchive(request.RomeoArchive); }
-        if (request.InstallCoOp && !string.IsNullOrWhiteSpace(request.XrArchive) && !File.Exists(request.XrArchive))
+        if (!profileOnly && request.InstallCoOp && request.XrArchive != null && !File.Exists(request.XrArchive))
             throw new PipelineException("The xrRazom zip was not found. Switch xrRazom to Download, or choose the file again.");
 
         foreach (var dir in new[] { layout.Root, layout.Tools, layout.Staging, layout.Logs, layout.State, layout.Backups, layout.Cache })
@@ -112,8 +110,8 @@ public sealed class InstallPipeline
         _log.Info("Detecting installation directories...");
         _log.Detail("Anomaly: " + layout.Anomaly + "\\");
         _log.Detail("GAMMA: " + layout.Gamma + "\\");
-        _log.Detail(request.DownloadAnomaly ? "Anomaly source: download" : "Anomaly source: installed folder");
-        _log.Detail(request.DownloadGamma ? "GAMMA source: download" : "GAMMA source: installed folder");
+        _log.Detail(request.AnomalyZip != null ? "Anomaly source: " + request.AnomalyZip : request.DownloadAnomaly ? "Anomaly source: download" : "Anomaly source: installed folder");
+        _log.Detail(request.GammaZip != null ? "GAMMA source: " + request.GammaZip : request.DownloadGamma ? "GAMMA source: download" : "GAMMA source: installed folder");
         _log.Detail(request.InstallCoOp
             ? (string.IsNullOrWhiteSpace(request.XrArchive) ? "xrRazom source: download" : "xrRazom source: local archive")
             : "Co-op: off");
@@ -124,6 +122,9 @@ public sealed class InstallPipeline
 
         if (profileOnly)
         {
+            var detected = ExistingStack.Detect(layout.Root, allowIncomplete: true);
+            if (detected != null && detected.CoOp != request.InstallCoOp)
+                throw new PipelineException("Select the ROMEO .7z in Settings for a full repair to apply your xrRazom setting.");
             _log.Info("Checking the installed stack and repairing MO2 configuration using the files on disk.");
             await RepairProfileAsync(null, layout, request, cancellationToken).ConfigureAwait(false);
             var missing = File.ReadLines(layout.Modlist)
@@ -210,7 +211,36 @@ public sealed class InstallPipeline
             CloseOwnMo2(layout.Gamma);
             await CopyTreeAsync(source, destination, token).ConfigureAwait(false);
         }
-        finally { TryDeleteDirectory(temp); }
+        finally { CleanUpLocalArchive(temp); }
+    }
+
+    private void CleanUpLocalArchive(string temp)
+    {
+        try
+        {
+            try { TryDeleteDirectory(temp); }
+            catch (UnauthorizedAccessException)
+            {
+                // Archives can contain read-only files. Only change staged entries, skipping links.
+                var options = new EnumerationOptions
+                {
+                    RecurseSubdirectories = true,
+                    AttributesToSkip = FileAttributes.ReparsePoint,
+                    IgnoreInaccessible = false
+                };
+                foreach (var entry in Directory.EnumerateFileSystemEntries(temp, "*", options))
+                {
+                    var attributes = File.GetAttributes(entry);
+                    if (attributes.HasFlag(FileAttributes.ReadOnly))
+                        File.SetAttributes(entry, attributes & ~FileAttributes.ReadOnly);
+                }
+                TryDeleteDirectory(temp);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _log.Warning($"Could not remove temporary extraction folder '{temp}': {ex.Message}");
+        }
     }
 
     private static void RequireMachine()
@@ -451,6 +481,13 @@ public sealed class InstallPipeline
         CancellationToken cancellationToken)
     {
         var plan = new VerifyPlan(request.VerifyCheckMd5, request.VerifyForceGit, request.VerifyForceExtract, request.VerifyLargeFiles);
+        foreach (var archive in new[] { request.AnomalyZip, request.GammaZip })
+            if (archive != null && !File.Exists(archive))
+                throw new PipelineException("Local game archive missing. Update the archive path in Settings: " + archive);
+        if (request.AnomalyZip != null)
+            await _run.Step("Local Anomaly files",layout,() => ImportGameArchiveAsync(sevenZip,request.AnomalyZip,layout,layout.Anomaly,"AnomalyLauncher.exe",cancellationToken),_log.Info,cancellationToken);
+        if (request.GammaZip != null)
+            await _run.Step("Local GAMMA files",layout,() => ImportGameArchiveAsync(sevenZip,request.GammaZip,layout,layout.Gamma,"ModOrganizer.exe",cancellationToken),_log.Info,cancellationToken);
         await _run.Step("Anomaly integrity",layout,
             () => CheckAnomalyAsync(cli, layout, request.DownloadAnomaly, request.InstallCoOp, cancellationToken),_log.Info,cancellationToken).ConfigureAwait(false);
 
@@ -473,7 +510,12 @@ public sealed class InstallPipeline
                 ? "Update large files is on. gamma_large_files is refreshed."
                 : "Update large files is off. gamma_large_files is left in place.");
 
-            var resume = VerifyResume.Prepare(layout.Gamma, plan.ReposToSkip());
+            var resume = VerifyResume.Prepare(layout.Gamma, plan.ReposToSkip(), _run.RefreshGammaResume);
+            if (_run.RefreshGammaResume)
+            {
+                _run.RefreshGammaResume = false;
+                _run.Save(layout);
+            }
             CloseOwnMo2(layout.Gamma);
             var args = plan.FullInstallArgs();
             if (request.DownloadAnomaly)
@@ -508,7 +550,7 @@ public sealed class InstallPipeline
         if (request.InstallCoOp)
             await _run.Step("xrRazom files",layout,() => ApplyXrAsync(http, sevenZip, layout, request.XrArchive, reapply: true, cancellationToken),_log.Info,cancellationToken).ConfigureAwait(false);
         else
-            _log.Info("Co-op is off. xrRazom is left as it is.");
+            _log.Info("Co-op is off. The repaired profile will have xrRazom disabled.");
     }
 
     private async Task CheckAnomalyAsync(string cli, InstallLayout layout, bool download, bool coop, CancellationToken cancellationToken)
@@ -625,9 +667,6 @@ public sealed class InstallPipeline
     {
         BeginStep(reapply ? "REAPPLYING XRRAZOM" : "STEP 6 - INSTALLING XRRAZOM", reapply ? 86 : 90, 97);
         var downloads = RomeoDownloads.Ensure(layout.Gamma, layout.Cache);
-        if (!string.IsNullOrWhiteSpace(archive) && File.Exists(archive) && RomeoDownloads.Retain(archive, downloads, Pins.XrFileName))
-            _log.Info("Retained xrRazom in GAMMA\\downloads.");
-
         if (StageRules.XrComplete(layout.State, layout.XrModDir, reapply))
         {
             _log.Info("Stage 4/4: xrRazom already completed. Skipping.");
@@ -691,6 +730,8 @@ public sealed class InstallPipeline
         var path = string.IsNullOrWhiteSpace(requested)
             ? Path.Combine(layout.Staging, Pins.XrFileName)
             : requested;
+        var retained = Path.Combine(layout.Gamma, "downloads", Pins.XrFileName);
+        if (requested == null && File.Exists(retained)) path = retained;
         if (File.Exists(path))
         {
             _log.Info("Using existing xrRazom archive.");
@@ -698,6 +739,8 @@ public sealed class InstallPipeline
             FileHasher.AssertMatch(path, "MD5", Pins.XrMd5);
             return path;
         }
+
+        if (requested != null) throw new PipelineException("Selected xrRazom ZIP was not found: " + requested);
 
         _log.Info("Attempting the official ModDB download for xrRazom 1.5 Slim.");
         try
@@ -776,6 +819,8 @@ public sealed class InstallPipeline
         File.Copy(layout.Modlist, Path.Combine(layout.Backups, "ROMEO-modlist-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".txt"), overwrite: true);
         var priority = request.InstallCoOp ? Pins.PriorityMods : new[] { Pins.SpeedFixName };
         RequirePriorityMods(layout, priority);
+        if (!request.InstallCoOp)
+            ModlistEditor.Disable(layout.Modlist, Pins.XrModName);
         ModlistEditor.SetPriorityOrder(layout.Modlist, priority);
         if (cli != null) await SelectRomeoProfileAsync(cli, cancellationToken).ConfigureAwait(false);
         var ini = Path.Combine(layout.Gamma, "ModOrganizer.ini");

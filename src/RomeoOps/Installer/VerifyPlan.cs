@@ -10,6 +10,27 @@ public sealed class VerifyPlan
         UpdateLargeFiles = updateLargeFiles;
     }
 
+    public static PipelineRequest FromSettings(AppSettings settings, InstallLayout layout) => new()
+    {
+        Mode = PipelineMode.Verify,
+        AnomalyPath = layout.Anomaly,
+        GammaPath = layout.Gamma,
+        RomeoArchive = ExistingStack.ResolveRomeoArchive(layout, settings.RomeoArchive),
+        DownloadAnomaly = settings.AnomalySource == "Download",
+        DownloadGamma = settings.GammaSource == "Download",
+        AnomalyZip = settings.AnomalySource == "Local" ? settings.AnomalyZip : null,
+        GammaZip = settings.GammaSource == "Local" ? settings.GammaZip : null,
+        InstallCoOp = settings.CoOp,
+        XrArchive = settings.CoOp && settings.XrSource == "Local" ? settings.XrArchive : null,
+        CreateSnapshots = settings.CreateSnapshots,
+        PreserveUser = settings.PreserveUser,
+        PreserveMcm = settings.PreserveMcm,
+        VerifyCheckMd5 = settings.VerifyCheckMd5,
+        VerifyForceGit = settings.VerifyForceGit,
+        VerifyForceExtract = settings.VerifyForceExtract,
+        VerifyLargeFiles = settings.VerifyLargeFiles
+    };
+
     public bool CheckMd5 { get; }
     public bool ForceGitDownload { get; }
     public bool ForceZipExtraction { get; }
@@ -72,15 +93,15 @@ public static class GammaResume
 
 public static class VerifyResume
 {
-    public static bool Prepare(string gammaDir, IReadOnlyList<string> skipKeys)
+    public static bool Prepare(string gammaDir, IReadOnlyList<string> skipKeys, bool fresh = false)
     {
         Directory.CreateDirectory(gammaDir);
         var path = Path.Combine(gammaDir, "resume.txt");
-        if (skipKeys.Count == 0)
+        if (skipKeys.Count == 0 && !fresh)
             return File.Exists(path) && ReadCommand(path) == "full-install";
 
         var statuses = new Dictionary<string, string>(StringComparer.Ordinal);
-        if (File.Exists(path) && ReadCommand(path) == "full-install")
+        if (!fresh && File.Exists(path) && ReadCommand(path) == "full-install")
         {
             foreach (var line in File.ReadAllLines(path))
             {

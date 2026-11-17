@@ -432,6 +432,8 @@ public partial class MainWindow : Window
         string archive=verify ? existing?.RomeoArchive(settings.RomeoArchive) ?? "" : settings.RomeoArchive;
 
         if (resume) problems.Clear();
+        if (verify && archive.Length > 0 && settings.CoOp && settings.XrSource == "Local" && !File.Exists(settings.XrArchive))
+            problems.Add("Choose the xrRazom ZIP in Settings, or switch xrRazom to Download.");
         bool fullRepair=verify && archive.Length>0;
         string sources=$"Anomaly   {settings.AnomalySource}     /     GAMMA   {settings.GammaSource}     /     xrRazom   {(settings.CoOp ? settings.XrSource : "Disabled")}";
         Label(0,86,530,25,verify ? existing?.Layout.Root ?? "Installation directory" : sources,16,true);
@@ -440,7 +442,7 @@ public partial class MainWindow : Window
         {
             void Option(int x,int y,string name,string help,bool initial,Action<bool> change)
             {
-                var c=Put(Page,new CheckBox {Content=name,IsChecked=initial,IsEnabled=operation==null && fullRepair && !resume,FontFamily=Condensed,FontSize=15},x,y,double.NaN,25);
+                var c=Put(Page,new CheckBox {Content=name,IsChecked=initial,IsEnabled=operation==null && fullRepair,FontFamily=Condensed,FontSize=15},x,y,double.NaN,25);
                 c.Measure(new Size(245,25));
                 Info(x+c.DesiredSize.Width+4,y-2,name,help);
                 c.Click+=(_,_)=>{change(c.IsChecked==true);Save();};
@@ -477,7 +479,7 @@ public partial class MainWindow : Window
                 catch(Exception ex){MessageBox.Show(this,ex.Message,"Saved progress");}
             });
         if (resume && operation==null)
-            Info(377,row+7,"Saved progress","Resume continues from the saved checkpoint. Clear Saved Progress discards that checkpoint and keeps installed files and player-settings backups.");
+            Info(377,row+7,"Saved progress",verify ? "Resume uses your current settings. Changing them restarts the repair checks and keeps the original player-settings backup." : "Resume continues from the saved checkpoint. Clear Saved Progress discards that checkpoint and keeps installed files and player-settings backups.");
         else if (operation!=null)
             Info(135,row+7,scanning ? "Cancel scan" : "Stop and save",scanning ? "Stop reading the installation files." : "Stop this run and keep its checkpoint so you can resume later.");
         else if (problems.Count==0)
@@ -494,12 +496,14 @@ public partial class MainWindow : Window
         if (verify && existing==null && saved==null) { Show("Verify"); return; }
         using var cancel=new CancellationTokenSource();
         operation=cancel; percent=0; status="Preparing installation tools…"; journal = new RunJournal(); Show(current);
-        var request=saved?.Request ?? new PipelineRequest { Mode=verify ? PipelineMode.Verify:PipelineMode.Install, AnomalyPath=existing?.Layout.Anomaly ?? SetupGate.AnomalyFolder(settings),
-            GammaPath=existing?.Layout.Gamma ?? SetupGate.GammaFolder(settings),RomeoArchive=existing?.RomeoArchive(settings.RomeoArchive) ?? settings.RomeoArchive,
-            AnomalyZip=!verify && settings.AnomalySource=="Local" ? settings.AnomalyZip:null,
-            GammaZip=!verify && settings.GammaSource=="Local" ? settings.GammaZip:null,
-            XrArchive=verify ? RetainedXr(existing!) : settings.CoOp && settings.XrSource=="Local" ? settings.XrArchive:null,
-            InstallCoOp=existing?.CoOp ?? settings.CoOp, DownloadGamma=verify || settings.GammaSource=="Download", DownloadAnomaly=verify || settings.AnomalySource=="Download",
+        var layout = existing?.Layout ?? (verify && saved != null
+            ? InstallLayout.Create(saved.Request.AnomalyPath, saved.Request.GammaPath) : null);
+        var request=verify ? VerifyPlan.FromSettings(settings, layout!) : saved?.ResumeInstall(settings) ?? new PipelineRequest { Mode=PipelineMode.Install, AnomalyPath=SetupGate.AnomalyFolder(settings),
+            GammaPath=SetupGate.GammaFolder(settings),RomeoArchive=settings.RomeoArchive,
+            AnomalyZip=settings.AnomalySource=="Local" ? settings.AnomalyZip:null,
+            GammaZip=settings.GammaSource=="Local" ? settings.GammaZip:null,
+            XrArchive=settings.CoOp && settings.XrSource=="Local" ? settings.XrArchive:null,
+            InstallCoOp=settings.CoOp, DownloadGamma=settings.GammaSource=="Download", DownloadAnomaly=settings.AnomalySource=="Download",
             CreateSnapshots=settings.CreateSnapshots,PreserveUser=settings.PreserveUser,PreserveMcm=settings.PreserveMcm,
             VerifyCheckMd5=settings.VerifyCheckMd5,VerifyLargeFiles=settings.VerifyLargeFiles,VerifyForceExtract=settings.VerifyForceExtract,VerifyForceGit=settings.VerifyForceGit };
         var engine=new InstallPipeline(new PipelineCallbacks {
@@ -515,12 +519,6 @@ public partial class MainWindow : Window
         }
         catch(Exception ex){status=ex.Message;}
         finally {operation=null; if(closing) Close(); else Show(current);}
-    }
-    private string? RetainedXr(ExistingStack existing)
-    {
-        if (!existing.CoOp) return null;
-        var retained = Path.Combine(existing.Layout.Gamma, "downloads", Pins.XrFileName);
-        return File.Exists(retained) ? retained : File.Exists(settings.XrArchive) ? settings.XrArchive : null;
     }
     private void OpenLogs()
     {
