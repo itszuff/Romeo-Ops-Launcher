@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO.Compression;
 
 namespace RomeoOps.Installer;
@@ -16,7 +16,7 @@ public sealed record CoopAddon(string Name, string Slug, string Script, bool Nee
         new("Multiplayer Settings","multiplayer-settings","mp_settings.script")
     ];
 
-    private static string Ledger(InstallLayout layout) => Path.Combine(layout.State,"meemaster-enabled.txt");
+    internal static string Ledger(InstallLayout layout) => Path.Combine(layout.State,"meemaster-enabled.txt");
     private static string Marker(string folder, CoopAddon addon) => Path.Combine(folder,"gamedata","scripts",addon.Script);
     public static bool Enabled(ExistingStack stack, CoopAddon addon) => ActiveFolder(stack,addon) != null;
     private static string? ActiveFolder(ExistingStack stack, CoopAddon addon)
@@ -39,7 +39,7 @@ public sealed record CoopAddon(string Name, string Slug, string Script, bool Nee
         }
     }
     public static async Task Install(ExistingStack stack,IEnumerable<CoopAddon> selected,
-        Func<CoopAddon,string,CancellationToken,Task> fetch,Action<string> report,CancellationToken token, bool? enable=null, bool update=false)
+        Func<CoopAddon,string,CancellationToken,Task> fetch,Action<string> report,CancellationToken token, bool? enable=null, bool update=false, bool matchSelection=false)
     {
         var layout=stack.Layout;
         using var gate=SavedRun.Lock(layout);
@@ -49,7 +49,7 @@ public sealed record CoopAddon(string Name, string Slug, string Script, bool Nee
         var picks=selected.ToHashSet();
         if(enable==false && !update && picks.Contains(Catalog[0]) && Catalog.Any(a=>a.NeedsCore && Enabled(stack,a)))
             throw new IOException("Disable DANTE, Persistent Stalkers and Med Bag before disabling Master Core.");
-        if(!update && enable!=false && picks.Any(a=>a.NeedsCore)) picks.Add(Catalog[0]);
+        if(!matchSelection && !update && enable!=false && picks.Any(a=>a.NeedsCore)) picks.Add(Catalog[0]);
         string work=Path.Combine(layout.Staging,"addon-"+Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(work);
         var mods=Path.Combine(layout.Gamma,"mods");
@@ -68,7 +68,7 @@ public sealed record CoopAddon(string Name, string Slug, string Script, bool Nee
                 var folder=local==null ? addon.Folder : Path.GetFileName(local.Folder);
                 bool enabled=update ? local?.Enabled ?? false : enable ?? true;
                 if((update || !enabled) && local==null) throw new IOException(addon.Name+" is no longer installed.");
-                if(update && !folder.Equals(addon.Folder,StringComparison.OrdinalIgnoreCase))
+                if((update || matchSelection) && !folder.Equals(addon.Folder,StringComparison.OrdinalIgnoreCase))
                     throw new IOException("This copy belongs to the MO2 folder '"+folder+"'. Update it through Mod Organizer.");
                 var destination=Path.Combine(mods,folder);
                 managed.RemoveWhere(entry=>entry.TrimStart('-').Equals(folder,StringComparison.OrdinalIgnoreCase));

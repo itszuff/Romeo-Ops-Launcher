@@ -103,15 +103,39 @@ public partial class MainWindow
             Run(true);
     }
 
-    private void ShareSetup(ExistingStack stack,bool compare)
+    private async void ShareSetup(ExistingStack stack,bool compare)
     {
         try
         {
             if(compare)
             {
                 var open=new OpenFileDialog {Title="Choose another player's ROMEO setup",Filter="ROMEO setup (*.json)|*.json"};
-                if(open.ShowDialog(this)==true)
-                    Review("Co-op setup comparison",CoopSetup.Capture(stack).Compare(CoopSetup.Read(open.FileName)));
+                if(open.ShowDialog(this)!=true || operation!=null) return;
+                var target=CoopSetup.Read(open.FileName);
+                var plan=CoopMatch.Plan(stack,target);
+                var findings=CoopSetup.Capture(stack).Compare(target);
+                if (!Review("Co-op setup comparison",findings+"\n\n"+plan.Description,
+                    plan.CanApply ? "MATCH LOADED JSON" : null)) return;
+
+                using var stop=new CancellationTokenSource();
+                operation=stop;
+                Page.IsEnabled=false;
+                foreach(var button in nav.Values) button.IsEnabled=false;
+                var progress=Label(0,348,520,42,"Matching co-op setup…",18);
+                string outcome="Match complete.";
+                try
+                {
+                    await Task.Run(()=>CoopMatch.Apply(stack,target,
+                        (addon,path,token)=>ModDbRelease.Fetch(addon,path,PickBrowserDownload,token),
+                        message=>Dispatcher.Invoke(()=>progress.Text=message),stop.Token));
+                }
+                catch(OperationCanceledException){outcome="Match cancelled.";}
+                catch(Exception ex){outcome="Match incomplete. "+ex.Message;}
+                finally { operation=null; Page.IsEnabled=true; }
+                if(closing){Close();return;}
+                Show("Play");
+                var current=DetectInstallation() ?? throw new IOException("Could not reopen the installation.");
+                Review("Co-op setup result",outcome+"\n\n"+CoopSetup.Capture(current).Compare(target)+"\n\n"+CoopMatch.Plan(current,target).Description);
             }
             else
             {

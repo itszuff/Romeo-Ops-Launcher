@@ -26,7 +26,7 @@ public sealed record InstalledAddon(string Folder,bool Enabled,string? Version,s
         return null;
     }
 
-    private static string? ReadVersion(IEnumerable<string> lines)
+    internal static string? ReadVersion(IEnumerable<string> lines)
     {
         bool general=false;
         foreach(var raw in lines)
@@ -39,7 +39,7 @@ public sealed record InstalledAddon(string Folder,bool Enabled,string? Version,s
         return null;
     }
 
-    private static string? Stamp(string folder,string name,int length)
+    internal static string? Stamp(string folder,string name,int length)
     {
         var path=Path.Combine(folder,name);
         if(!File.Exists(path)) return null;

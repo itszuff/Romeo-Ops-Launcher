@@ -40,6 +40,8 @@ To reset one group immediately, use its **Reset to Fresh Defaults** button. To r
 
 ### Scan and repair an installation
 
+**Verify → Purge unused mod files** previews installed folders marked disabled in the MO2 profile you choose. Mods enabled in another profile are protected unless you explicitly include them. Review the names and estimated size before permanent deletion. Reinstall a removed mod to enable it again. Download archives, separator folders and linked folders are preserved.
+
 **Verify → Scan Installation** checks Anomaly 1.5.3 base-file checksums, recognizes supported modded replacements, and checks executables, the ROMEO profile, enabled mod folders and priority. Review the findings before starting a repair.
 
 - **Repair Profile** uses the installed files to repair MO2 configuration when the ROMEO archive is unavailable.
@@ -50,7 +52,8 @@ To reset one group immediately, use its **Reset to Fresh Defaults** button. To r
 
 1. On **Play**, choose **Export Co-op Setup** and send the saved JSON file to your friend.
 2. On their launcher, they choose **Play → Compare with Friend** and open your file.
-3. The report compares the detected xrRazom build, the SHA-256 checksum of the DX11 AVX engine, enabled supported co-op add-ons, and the enabled mods in the ROMEO profile. It lists entries present on only one side and changes in the relative priority of shared mods. Comparing is read-only.
+3. The report compares the detected xrRazom build, the SHA-256 checksum of the DX11 AVX engine, enabled supported co-op add-ons, and the enabled mods in the ROMEO profile. It lists entries present on only one side and changes in the relative priority of shared mods. New exports include available MO2 version labels and launcher-recorded release checksums. Older exports still work for profile comparisons.
+4. Review the proposed changes, then choose **Match Loaded JSON** to enable installed mods, disable extras, and apply the shared load order. The launcher backs up the profile and can fetch supported MeeMaster add-ons from ModDB. When the export specifies a release, the download must match its checksum or version label. The result shows remaining differences. Install other missing mods or specific older releases through MO2.
 
 ### Manage co-op add-ons
 

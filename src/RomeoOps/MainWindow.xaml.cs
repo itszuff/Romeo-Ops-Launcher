@@ -144,7 +144,7 @@ public partial class MainWindow : Window
             {
                 Put(Page,new Border { Background=Brushes.LightGray },0,215,530,1);
                 Label(0,230,530,34,"CO-OP SETUP",23,true);
-                Info(106,234,"Co-op setup","Export saves a JSON file with your xrRazom build, engine checksum, active add-ons and mod order. Compare reads another player's export and lists differences.");
+                Info(106,234,"Co-op setup","Export saves a JSON file with your xrRazom build, engine checksum, active mods in load order, and available versions or release checksums. Compare with a friend to review differences and match supported changes.");
                 Label(0,264,520,40,"Share your active profile or compare it with a friend's exported setup.",18);
                 Outline(Action(Page,0,300,178,35,"EXPORT CO-OP SETUP",()=>ShareSetup(existing,false)));
                 Outline(Action(Page,186,300,178,35,"COMPARE WITH FRIEND",()=>ShareSetup(existing,true)));
@@ -455,6 +455,8 @@ public partial class MainWindow : Window
         if(operation!=null) Action(Page,0,row,130,35,scanning ? "CANCEL SCAN":"STOP AND SAVE",()=>operation?.Cancel());
         else if(problems.Count>0) Action(Page,0,row,130,35,"OPEN SETTINGS",()=>Show("Settings"));
         else Action(Page,0,row,168,35,resume ? "RESUME "+pending!.Request.Mode.ToString().ToUpperInvariant() : verify ? "SCAN INSTALLATION" : "START INSTALLATION",()=>{if(verify && !resume) Scan(existing!); else Run(verify);});
+        if (verify && existing != null && pending == null && operation == null)
+            Outline(Action(Page,205,row,215,35,"PURGE UNUSED MOD FILES",()=>ShowModPurge(existing)));
         if (resume && operation==null)
             Action(Page,180,row,192,35,"CLEAR SAVED PROGRESS",()=>
             {

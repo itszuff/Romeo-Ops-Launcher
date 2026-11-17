@@ -959,10 +959,48 @@ public sealed class InstallPipeline
         TryDeleteDirectory(destination);
         Directory.CreateDirectory(destination);
         var target = destination.TrimEnd(Path.DirectorySeparatorChar);
-        _log.Info("Testing " + Path.GetFileName(archive) + ".");
-        await RunAsync(sevenZip, new[] { "t", archive }, cancellationToken, reportProgress: reportProgress).ConfigureAwait(false);
-        _log.Info("Extracting " + Path.GetFileName(archive) + ".");
-        await RunAsync(sevenZip, new[] { "x", archive, "-o" + target, "-y", "-aoa" }, cancellationToken, reportProgress: reportProgress).ConfigureAwait(false);
+        await RunArchivePhase("Testing", new[] { "t", "-bsp1", archive }, 0).ConfigureAwait(false);
+        await RunArchivePhase("Extracting", new[] { "x", "-bsp1", archive, "-o" + target, "-y", "-aoa" }, 50).ConfigureAwait(false);
+
+        async Task RunArchivePhase(string phase, string[] args, int start)
+        {
+            var label = phase + " " + Path.GetFileName(archive);
+            _log.Info(label + ".");
+            int lastPercent = -1;
+            var lastLog = Stopwatch.StartNew();
+            int lastLoggedPercent = 0;
+
+            void Output(string line)
+            {
+                var text = line.Trim();
+                var end = text.IndexOf('%');
+                if (end < 1 || !int.TryParse(text.AsSpan(0, end), out int percent) || percent is < 0 or > 100)
+                {
+                    if (text.Length > 0) _log.Info(text);
+                    return;
+                }
+                if (percent <= lastPercent) return;
+                lastPercent = percent;
+                var detail = $"{label} — {percent}%";
+                if (reportProgress) ReportChild(start + percent / 2, detail);
+                if (percent >= lastLoggedPercent + 5 || lastLog.Elapsed >= TimeSpan.FromSeconds(30))
+                {
+                    _log.Info(detail);
+                    lastLoggedPercent = percent;
+                    lastLog.Restart();
+                }
+            }
+
+            await RunAsync(sevenZip, args, cancellationToken, output: Output,
+                idle: silent =>
+                {
+                    if (lastLog.Elapsed < TimeSpan.FromMinutes(1)) return;
+                    var last = lastPercent >= 0 ? $" Last reported progress was {lastPercent}%." : "";
+                    _log.Info($"{label} — waiting for a progress update ({(int)silent.TotalMinutes} min).{last}");
+                    lastLog.Restart();
+                }).ConfigureAwait(false);
+            _log.Info(label + " complete.");
+        }
     }
 
     private async Task CopyTreeAsync(string from, string to, CancellationToken cancellationToken)
@@ -1031,7 +1069,9 @@ public sealed class InstallPipeline
         bool throwOnError = true,
         string? workingDirectory = null,
         bool reportProgress = true,
-        bool announce = true)
+        bool announce = true,
+        Action<string>? output = null,
+        Action<TimeSpan>? idle = null)
     {
         _idleLogged = false;
         var shown = Path.GetFileName(program) + " " + string.Join(' ', args.Select(Quote));
@@ -1042,10 +1082,10 @@ public sealed class InstallPipeline
             program,
             args,
             cancellationToken,
-            reportProgress ? OnProcessLine : null,
+            output ?? (reportProgress ? OnProcessLine : null),
             allowed,
             throwOnError,
-            OnIdle,
+            idle ?? OnIdle,
             workingDirectory).ConfigureAwait(false);
     }
 
