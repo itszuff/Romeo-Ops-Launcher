@@ -1011,11 +1011,49 @@ public sealed class InstallPipeline
         _log.Info("Copying files.");
         _log.Detail(from + "  ->  " + to);
         var robocopy = Path.Combine(Environment.SystemDirectory, "robocopy.exe");
+        var destination = Path.GetFileName(Path.TrimEndingDirectorySeparator(to));
+        var lastPercent = -1;
+        var lastLoggedPercent = -10;
+        var lastLog = Stopwatch.StartNew();
+        void CopyOutput(string line)
+        {
+            _idleLogged = false;
+            var match = Regex.Match(line, @"\b(?<percent>\d{1,3})%\s*$");
+            if (!match.Success || !int.TryParse(match.Groups["percent"].Value, out var percent)
+                || percent is < 0 or > 100)
+            {
+                if (!string.IsNullOrWhiteSpace(line)) _log.Info(line.Trim());
+                return;
+            }
+
+            if (percent < lastPercent && percent <= 10) lastPercent = -1;
+            if (percent <= lastPercent) return;
+            lastPercent = percent;
+            var detail = $"Copying files to {destination} - current file {percent}%";
+            Report(_shownPercent, detail);
+            if (percent >= lastLoggedPercent + 10 || lastLog.Elapsed >= TimeSpan.FromSeconds(30))
+            {
+                _log.Info(detail);
+                lastLoggedPercent = percent;
+                lastLog.Restart();
+            }
+        }
+
+        void CopyIdle(TimeSpan silent)
+        {
+            var last = lastPercent >= 0 ? $" Last reported file progress was {lastPercent}%." : " Waiting for Robocopy output.";
+            var detail = $"Still copying files to {destination}.{last}";
+            _log.Info(detail);
+            Report(_shownPercent, $"Copying files to {destination}. No progress output for {(int)silent.TotalMinutes} min.");
+        }
+
         await RunAsync(
             robocopy,
-            new[] { from, to, "/E", "/XJ", "/R:2", "/W:2", "/NP", "/NFL", "/NDL" },
+            new[] { from, to, "/E", "/XJ", "/R:2", "/W:2", "/NFL", "/NDL" },
             cancellationToken,
-            RobocopySuccess).ConfigureAwait(false);
+            RobocopySuccess,
+            output: CopyOutput,
+            idle: CopyIdle).ConfigureAwait(false);
     }
 
     private void RemoveLegacy(string baseDir)
@@ -1095,7 +1133,7 @@ public sealed class InstallPipeline
         if (!_idleLogged)
         {
             _idleLogged = true;
-            _log.Warning("No installer output for " + minutes + " minutes. It may be stuck on a download or extract. Cancel, then run Install again. Completed mods are skipped.");
+            _log.Warning("No installer output for " + minutes + " minutes. The current step may be waiting or taking longer than expected. Check the operation before cancelling.");
         }
 
         Report(_shownPercent, "No output for " + minutes + " min. Cancel and run Install again to resume.");
