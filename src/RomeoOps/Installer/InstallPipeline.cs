@@ -1,4 +1,4 @@
-ï»¿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Security.Principal;
@@ -24,6 +24,7 @@ public sealed class InstallPipeline
     private int _shownPercent;
     private bool _idleLogged;
     private string? _romeoSourceGamma;
+    private ArchiveRetentionSession _retention = new();
     private long _lastDetailTick;
     private string[] _anomalyArgs = { "anomaly-install", "--use-anomaly-mirror", "--json" };
     private string[] _anomalyCheckArgs = { "anomaly", "check", "--json" };
@@ -33,6 +34,8 @@ public sealed class InstallPipeline
     public async Task<PipelineResult> RunAsync(PipelineRequest request, CancellationToken cancellationToken)
     {
         _log = new InstallLog(_callbacks.Log);
+        _retention = new ArchiveRetentionSession();
+        _romeoSourceGamma = null;
         try
         {
             await Task.Yield();
@@ -64,7 +67,25 @@ public sealed class InstallPipeline
                 PlayerOptions.RecordFresh(layout,request.InstallCoOp,backup);
             PlayerOptions.Apply(layout,backup,request.PreserveUser,request.PreserveMcm,true,request.InstallCoOp);
             CoopAddon.Restore(layout, layout.Modlist, request.InstallCoOp ? null : []);
+            InstallationValidation.Validate(layout, request.InstallCoOp);
             _run.Finish(layout);
+            _log.Success("Final checks passed: executables, enabled mod folders, profile and priority.");
+            _log.Info("Player settings and managed add-ons restored. These checks do not hash every installed mod file.");
+            Report(100, "");
+            _log.Success(request.Mode == PipelineMode.Verify && string.IsNullOrEmpty(request.RomeoArchive)
+                ? "SUCCESS: Installed profile repaired and final checks completed."
+                : request.InstallCoOp
+                ? "SUCCESS: Anomaly, GAMMA, ROMEO, and xrRazom stages completed."
+                : "SUCCESS: Anomaly, GAMMA, and ROMEO stages completed.");
+            _log.Info("Mod Organizer: " + Path.Combine(layout.Gamma, "ModOrganizer.exe"));
+            _log.Info("MO2 profile: " + Pins.RomeoProfile);
+            _log.Info(request.InstallCoOp
+                ? "Priority: 1. " + Pins.XrModName + "; 2. " + Pins.SpeedFixName
+                : "Priority: 1. " + Pins.SpeedFixName);
+            _log.Info("Steam AppID override: 480 for every Mod Organizer executable.");
+            _log.Info("Reusable installers: " + RomeoDownloads.Folder(layout.Gamma));
+            _log.Info("ROMEO reinstall snapshots restore the installed files. They do not reproduce original FOMOD choices.");
+            _log.Info(Pins.ManualStep);
             return result with { LogFile = _log.FilePath };
         }
         catch (OperationCanceledException)
@@ -126,12 +147,7 @@ public sealed class InstallPipeline
                 throw new PipelineException("Select the ROMEO .7z in Settings for a full repair to apply your xrRazom setting.");
             _log.Info("Checking the installed stack and repairing MO2 configuration using the files on disk.");
             await RepairProfileAsync(null, layout, request, cancellationToken).ConfigureAwait(false);
-            var missing = File.ReadLines(layout.Modlist)
-                .Where(line => line.StartsWith('+') && line.Length > 1)
-                .Select(line => line[1..]).Where(name => !Directory.Exists(Path.Combine(layout.Gamma, "mods", name))).ToList();
-            if (missing.Count > 0)
-                throw new PipelineException("Profile repaired. Missing enabled mod folders: " + string.Join(", ", missing) + ". Select the ROMEO .7z for a full repair.");
-            _log.Success("Installed executables, enabled mod folders and MO2 profile checked.");
+            _log.Info("MO2 configuration repaired; final checks follow settings restoration.");
             return new PipelineResult { Success = true };
         }
 
@@ -164,26 +180,13 @@ public sealed class InstallPipeline
                     _log.Info("Co-op is off. xrRazom will not be installed.");
                 break;
             case PipelineMode.Verify:
-                if (!File.Exists(Path.Combine(layout.Gamma, "ModOrganizer.exe")))
-                    throw new PipelineException("GAMMA is not installed. Run Install before Verify.");
+                if (!File.Exists(Path.Combine(layout.Gamma, "ModOrganizer.exe")) && request.GammaZip == null)
+                    throw new PipelineException("GAMMA is not installed. Select a GAMMA archive or run Install before Verify.");
                 await VerifyAsync(cli.Exe, http, sevenZip, layout, request, cancellationToken).ConfigureAwait(false);
                 break;
         }
 
         await FinishAsync(cli.Exe, sevenZip, layout, request, cancellationToken).ConfigureAwait(false);
-        Report(100, "");
-        _log.Success(request.InstallCoOp
-            ? "SUCCESS: Anomaly, GAMMA, ROMEO, and xrRazom stages completed."
-            : "SUCCESS: Anomaly, GAMMA, and ROMEO stages completed.");
-        _log.Info("Mod Organizer: " + Path.Combine(layout.Gamma, "ModOrganizer.exe"));
-        _log.Info("MO2 profile: " + Pins.RomeoProfile);
-        _log.Info(request.InstallCoOp
-            ? "Priority: 1. " + Pins.XrModName + "; 2. " + Pins.SpeedFixName
-            : "Priority: 1. " + Pins.SpeedFixName);
-        _log.Info("Steam AppID override: 480 for every Mod Organizer executable.");
-        _log.Info("Reusable installers: " + RomeoDownloads.Folder(layout.Gamma));
-        _log.Info("ROMEO reinstall snapshots restore the installed files. They do not reproduce original FOMOD choices.");
-        _log.Info(Pins.ManualStep);
         return new PipelineResult { Success = true };
     }
 
@@ -480,15 +483,17 @@ public sealed class InstallPipeline
         CancellationToken cancellationToken)
     {
         var plan = new VerifyPlan(request.VerifyCheckMd5, request.VerifyForceGit, request.VerifyForceExtract, request.VerifyLargeFiles);
-        foreach (var archive in new[] { request.AnomalyZip, request.GammaZip })
-            if (archive != null && !File.Exists(archive))
-                throw new PipelineException("Local game archive missing. Update the archive path in Settings: " + archive);
-        if (request.AnomalyZip != null)
-            await _run.Step("Local Anomaly files",layout,() => ImportGameArchiveAsync(sevenZip,request.AnomalyZip,layout,layout.Anomaly,"AnomalyLauncher.exe",cancellationToken),_log.Info,cancellationToken);
-        if (request.GammaZip != null)
-            await _run.Step("Local GAMMA files",layout,() => ImportGameArchiveAsync(sevenZip,request.GammaZip,layout,layout.Gamma,"ModOrganizer.exe",cancellationToken),_log.Info,cancellationToken);
-        await _run.Step("Anomaly integrity",layout,
-            () => CheckAnomalyAsync(cli, layout, request.DownloadAnomaly, request.InstallCoOp, cancellationToken),_log.Info,cancellationToken).ConfigureAwait(false);
+        if (!File.Exists(Path.Combine(layout.Gamma, "ModOrganizer.exe")) && request.GammaZip != null)
+            await _run.Step("Local GAMMA files", layout, () => ImportGameArchiveAsync(sevenZip, request.GammaZip, layout, layout.Gamma, "ModOrganizer.exe", cancellationToken), _log.Info, cancellationToken);
+        else
+            _log.Info("Using installed GAMMA files; base archive import skipped.");
+        await _run.Step("Anomaly integrity", layout,
+            () => CheckAnomalyAsync(cli, layout, request.DownloadAnomaly, request.InstallCoOp, cancellationToken,
+                request.AnomalyZip == null ? null : async () =>
+                {
+                    await ImportGameArchiveAsync(sevenZip, request.AnomalyZip, layout, layout.Anomaly, "AnomalyLauncher.exe", cancellationToken);
+                    await CheckAnomalyAsync(cli, layout, false, request.InstallCoOp, cancellationToken);
+                }), _log.Info, cancellationToken).ConfigureAwait(false);
 
         await _run.Step("GAMMA verification",layout,async () =>
         {
@@ -552,12 +557,13 @@ public sealed class InstallPipeline
             _log.Info("Co-op is off. The repaired profile will have xrRazom disabled.");
     }
 
-    private async Task CheckAnomalyAsync(string cli, InstallLayout layout, bool download, bool coop, CancellationToken cancellationToken)
+    private async Task CheckAnomalyAsync(string cli, InstallLayout layout, bool download, bool coop, CancellationToken cancellationToken, Func<Task>? repairLocal = null)
     {
         BeginStep("CHECKING ANOMALY INTEGRITY", 8, 30);
         var launcher = Path.Combine(layout.Anomaly, "AnomalyLauncher.exe");
         if (!File.Exists(launcher))
         {
+            if (repairLocal != null) { await repairLocal().ConfigureAwait(false); return; }
             if (!download)
                 throw new PipelineException("AnomalyLauncher.exe was not found, and download is turned off. Choose Download on the Settings page, or run Install.");
             _log.Warning("Anomaly launcher is missing. Installing Anomaly.");
@@ -608,6 +614,12 @@ public sealed class InstallPipeline
             return;
         }
 
+        if (repairLocal != null)
+        {
+            _log.Info("Repairing damaged Anomaly files from the local archive.");
+            await repairLocal().ConfigureAwait(false);
+            return;
+        }
         if (!download) throw new PipelineException("Base Anomaly repair required: " + string.Join(", ", unexpected));
         _log.Warning($"Repairing Anomaly after {unexpected.Count} unrecognized or missing file(s).");
         await InstallAnomalyAsync(cli, layout, download: true, force: true, cancellationToken).ConfigureAwait(false);
@@ -621,8 +633,9 @@ public sealed class InstallPipeline
         CancellationToken cancellationToken)
     {
         BeginStep(reapply ? "REAPPLYING ROMEO" : "STEP 5 - APPLYING ROMEO ARCHIVE", reapply ? 70 : 78, reapply ? 86 : 90);
+        _log.Info("Checking / retaining the ROMEO archive in GAMMA\\downloads before starting 7-Zip.");
         var downloads = RomeoDownloads.Ensure(layout.Gamma, layout.Cache);
-        if (RomeoDownloads.Retain(archive, downloads, Pins.RomeoArchiveFile))
+        if (await RetainArchiveAsync(archive, downloads, Pins.RomeoArchiveFile, cancellationToken))
             _log.Info("Retained the ROMEO archive in GAMMA\\downloads.");
 
         if (StageRules.RomeoComplete(layout.State, reapply))
@@ -634,7 +647,7 @@ public sealed class InstallPipeline
 
         EnsureGameIsClosed();
         CloseOwnMo2(layout.Gamma);
-        var extract = Path.Combine(layout.Staging, "Romeo-2026-11-09-001");
+        var extract = Path.Combine(layout.Staging, Pins.RomeoStagingFolder);
         _log.Info("Applying ROMEO from " + Path.GetFileName(archive) + ".");
         await ExtractAsync(sevenZip, archive, extract, cancellationToken).ConfigureAwait(false);
         var root = ArchiveLayout.FindBundleRoot(extract, new[] { "GAMMA", "Anomaly" });
@@ -651,6 +664,7 @@ public sealed class InstallPipeline
             _log.Warning($"ROMEO profile has {count} enabled entries, not {Pins.ExpectedRomeoMods}. GAMMA and ROMEO versions may differ. Inspect Mod Organizer if this is unexpected.");
 
         ClearCaches(layout.Anomaly);
+        ArchiveReference.Record(layout.State, "romeo", archive);
         new StateStore(layout.State).Complete("03-romeo");
         _log.Success("ROMEO applied.");
         Report(_rangeEnd);
@@ -677,7 +691,7 @@ public sealed class InstallPipeline
         EnsureGameIsClosed();
         CloseOwnMo2(layout.Gamma);
         var zip = await GetXrArchiveAsync(http, layout, archive, cancellationToken).ConfigureAwait(false);
-        if (RomeoDownloads.Retain(zip, downloads, Pins.XrFileName))
+        if (await RetainArchiveAsync(zip, downloads, Pins.XrFileName, cancellationToken))
             _log.Info("Retained xrRazom in GAMMA\\downloads.");
         var extract = Path.Combine(layout.Staging, "xrRazom-1.5-Slim");
         await ExtractAsync(sevenZip, zip, extract, cancellationToken).ConfigureAwait(false);
@@ -718,6 +732,7 @@ public sealed class InstallPipeline
             _log.Warning("Enabled count changed unexpectedly. Inspect the saved modlist before playing.");
 
         ClearCaches(layout.Anomaly);
+        ArchiveReference.Record(layout.State, "xrrazom", zip);
         new StateStore(layout.State).Complete("04-xrrazom");
         TryDeleteDirectory(extract);
         _log.Success("xrRazom 1.5 Slim installed. Priority is xrRazom, then Teepo's Speed Fix.");
@@ -782,14 +797,15 @@ public sealed class InstallPipeline
     {
         BeginStep("FINAL MO2 REPAIRS", 97, 100);
         CloseOwnMo2(layout.Gamma);
+        _log.Info("Checking / retaining the ROMEO archive in GAMMA\\downloads before starting 7-Zip.");
         var downloads = RomeoDownloads.Ensure(layout.Gamma, layout.Cache);
-        if (RomeoDownloads.Retain(request.RomeoArchive, downloads, Pins.RomeoArchiveFile))
+        if (await RetainArchiveAsync(request.RomeoArchive, downloads, Pins.RomeoArchiveFile, cancellationToken))
             _log.Info("Retained the ROMEO archive in GAMMA\\downloads.");
 
         await EnsureRomeoProfileAsync(layout, refresh: false, cancellationToken).ConfigureAwait(false);
         await _run.Step("Reinstall archives",layout,async () =>
         {
-            var extract = Path.Combine(layout.Staging,"Romeo-2026-11-09-001");
+            var extract = Path.Combine(layout.Staging,Pins.RomeoStagingFolder);
             var source = _romeoSourceGamma;
             bool create = request.Mode == PipelineMode.Install || request.CreateSnapshots;
             if (source == null && _run.Done.Contains("ROMEO files") && Directory.Exists(extract))
@@ -826,31 +842,6 @@ public sealed class InstallPipeline
         var executables = Mo2Profile.SetSteamAppId(ini, layout.Backups);
         _log.Info("Steam AppID 480 verified for " + executables + " MO2 custom executables.");
 
-        if (!File.Exists(Path.Combine(layout.Anomaly, "AnomalyLauncher.exe")))
-            throw new PipelineException("Missing Anomaly launcher.");
-        if (!File.Exists(Path.Combine(layout.Gamma, "ModOrganizer.exe")))
-            throw new PipelineException("Missing Mod Organizer.");
-        if (request.InstallCoOp && !Directory.Exists(Path.Combine(layout.XrModDir, "gamedata")))
-            throw new PipelineException("Missing xrRazom MO2 mod.");
-        if (!File.Exists(layout.Modlist))
-            throw new PipelineException("ROMEO profile is missing.");
-
-        if (request.InstallCoOp)
-        {
-            var top = ModlistEditor.TopMods(layout.Modlist, 2);
-            if (top.Count != 2
-                || !string.Equals(top[0], "+" + Pins.XrModName, StringComparison.Ordinal)
-                || !string.Equals(top[1], "+" + Pins.SpeedFixName, StringComparison.Ordinal))
-                throw new PipelineException("MO2 priority verification failed: xrRazom must be first and Teepo's Speed Fix second.");
-        }
-        else
-        {
-            var top = ModlistEditor.TopMods(layout.Modlist, 1);
-            if (top.Count != 1 || !string.Equals(top[0], "+" + Pins.SpeedFixName, StringComparison.Ordinal))
-                throw new PipelineException("MO2 priority verification failed: Teepo's Speed Fix must be first when co-op is off.");
-        }
-        _log.Success("Final verification passed.");
-        Report(_rangeEnd);
     }
 
     private async Task EnsureRomeoProfileAsync(InstallLayout layout, bool refresh, CancellationToken cancellationToken)
@@ -911,7 +902,7 @@ public sealed class InstallPipeline
                 var fileName = Path.GetFileName(existing);
                 var inDownloads = Path.Combine(downloads, fileName);
                 if (!string.Equals(Path.GetFullPath(existing), Path.GetFullPath(inDownloads), StringComparison.OrdinalIgnoreCase)
-                    && RomeoDownloads.Retain(existing, downloads, fileName))
+                    && await RetainArchiveAsync(existing, downloads, fileName, cancellationToken))
                     _log.Info("Retained installer archive in GAMMA downloads.");
                 RomeoDownloads.SetInstallationFile(installed, fileName, layout.Backups);
                 continue;
@@ -995,6 +986,23 @@ public sealed class InstallPipeline
             throw new PipelineException($"{letter} does not have enough free space for GAMMA.");
     }
 
+    private async Task<bool> RetainArchiveAsync(string source, string downloads, string name, CancellationToken token)
+    {
+        string? lastPhase = null;
+        var lastLog = Stopwatch.StartNew();
+        return await _retention.RetainAsync(source, downloads, name, token, (phase, snap) =>
+        {
+            var detail = phase + " - " + snap.Format();
+            Report(_shownPercent, detail);
+            if (phase != lastPhase || lastLog.Elapsed >= TimeSpan.FromSeconds(5) || snap.Got == snap.Total)
+            {
+                _log.Info(detail);
+                lastLog.Restart();
+                lastPhase = phase;
+            }
+        }).ConfigureAwait(false);
+    }
+
     private async Task ExtractAsync(string sevenZip, string archive, string destination, CancellationToken cancellationToken, bool reportProgress = true)
     {
         if (!File.Exists(archive))
@@ -1002,16 +1010,15 @@ public sealed class InstallPipeline
         TryDeleteDirectory(destination);
         Directory.CreateDirectory(destination);
         var target = destination.TrimEnd(Path.DirectorySeparatorChar);
-        await RunArchivePhase("Testing", new[] { "t", "-bsp1", archive }, 0).ConfigureAwait(false);
-        await RunArchivePhase("Extracting", new[] { "x", "-bsp1", archive, "-o" + target, "-y", "-aoa" }, 50).ConfigureAwait(false);
+        await RunArchivePhase("Extracting", new[] { "x", "-bb0", "-bso1", "-bse2", "-bsp1", "-sccUTF-8", archive, "-o" + target, "-y", "-aoa" }).ConfigureAwait(false);
 
-        async Task RunArchivePhase(string phase, string[] args, int start)
+        async Task RunArchivePhase(string phase, string[] args)
         {
             var label = phase + " " + Path.GetFileName(archive);
             _log.Info(label + ".");
             int lastPercent = -1;
             var lastLog = Stopwatch.StartNew();
-            int lastLoggedPercent = 0;
+            int lastLoggedPercent = -1;
 
             void Output(string line)
             {
@@ -1024,9 +1031,9 @@ public sealed class InstallPipeline
                 }
                 if (percent <= lastPercent) return;
                 lastPercent = percent;
-                var detail = $"{label} — {percent}%";
-                if (reportProgress) ReportChild(start + percent / 2, detail);
-                if (percent >= lastLoggedPercent + 5 || lastLog.Elapsed >= TimeSpan.FromSeconds(30))
+                var detail = $"{label} - {percent}%";
+                if (reportProgress) ReportChild(percent, detail);
+                if (percent >= lastLoggedPercent + 1 || lastLog.Elapsed >= TimeSpan.FromSeconds(30))
                 {
                     _log.Info(detail);
                     lastLoggedPercent = percent;
@@ -1039,7 +1046,7 @@ public sealed class InstallPipeline
                 {
                     if (lastLog.Elapsed < TimeSpan.FromMinutes(1)) return;
                     var last = lastPercent >= 0 ? $" Last reported progress was {lastPercent}%." : "";
-                    _log.Info($"{label} — waiting for a progress update ({(int)silent.TotalMinutes} min).{last}");
+                    _log.Info($"{label} - waiting for a progress update ({(int)silent.TotalMinutes} min).{last}");
                     lastLog.Restart();
                 }).ConfigureAwait(false);
             _log.Info(label + " complete.");
@@ -1056,12 +1063,13 @@ public sealed class InstallPipeline
         var robocopy = Path.Combine(Environment.SystemDirectory, "robocopy.exe");
         var destination = Path.GetFileName(Path.TrimEndingDirectorySeparator(to));
         var lastPercent = -1;
-        var lastLoggedPercent = -10;
+        var filesReported = 0;
+        var lastLoggedFile = 0;
         var lastLog = Stopwatch.StartNew();
         void CopyOutput(string line)
         {
             _idleLogged = false;
-            var match = Regex.Match(line, @"\b(?<percent>\d{1,3})%\s*$");
+            var match = Regex.Match(line, @"\b(?<percent>\d{1,3})%");
             if (!match.Success || !int.TryParse(match.Groups["percent"].Value, out var percent)
                 || percent is < 0 or > 100)
             {
@@ -1072,12 +1080,16 @@ public sealed class InstallPipeline
             if (percent < lastPercent && percent <= 10) lastPercent = -1;
             if (percent <= lastPercent) return;
             lastPercent = percent;
-            var detail = $"Copying files to {destination} - current file {percent}%";
+            filesReported++;
+            var file = line[(match.Index + match.Length)..].Trim();
+            var detail = string.IsNullOrWhiteSpace(file)
+                ? $"Copying files to {destination} - current file {percent}%"
+                : $"Copying to {destination} - {percent}% {file}";
             Report(_shownPercent, detail);
-            if (percent >= lastLoggedPercent + 10 || lastLog.Elapsed >= TimeSpan.FromSeconds(30))
+            if (filesReported >= lastLoggedFile + 10 || lastLog.Elapsed >= TimeSpan.FromSeconds(10))
             {
-                _log.Info(detail);
-                lastLoggedPercent = percent;
+                _log.Info($"Copying files to {destination} - {filesReported} file updates reported; latest {percent}% {file}".TrimEnd());
+                lastLoggedFile = filesReported;
                 lastLog.Restart();
             }
         }

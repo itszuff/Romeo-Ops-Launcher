@@ -22,7 +22,7 @@ public sealed class VerifyPlan
         GammaZip = settings.GammaSource == "Local" ? settings.GammaZip : null,
         InstallCoOp = settings.CoOp,
         XrArchive = settings.CoOp && settings.XrSource == "Local" ? settings.XrArchive : null,
-        CreateSnapshots = settings.CreateSnapshots,
+        CreateSnapshots = false,
         PreserveUser = settings.PreserveUser,
         PreserveMcm = settings.PreserveMcm,
         VerifyCheckMd5 = settings.VerifyCheckMd5,

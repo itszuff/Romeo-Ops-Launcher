@@ -15,9 +15,9 @@ Version 2.6.1 checks for updates from this repository. If you have 2.6.0 or earl
 
 ### Install, resume and play
 
-- Choose the installation folder in **Settings**. Download Anomaly and GAMMA or supply local archives, then select the ROMEO `.7z`. For co-op, download xrRazom Slim or select its ZIP. Choose **Disable** for solo play.
+- Choose the installation folder in **Settings**. Anomaly and GAMMA default to **Folder** for existing installations; **Archive** imports a local ZIP / 7z and **Auto Install** downloads them during installation. Saved Anomaly / GAMMA choices are preserved. Use **Open Downloads** for ROMEO, then **Browse** to its `.7z`. For xrRazom, choose **Auto Install** or **Archive** to use a local Slim ZIP. These links do not start an installation. Choose **Disable** for solo play.
 - If the launcher detects an existing ROMEO installation, **Verify / Fix Installation** opens its repair tools. During an install or repair, **Stop and Save** records a checkpoint. Resume from the last completed stage, or clear the checkpoint to choose new settings.
-- If the automated xrRazom download fails, the launcher offers to open ModDB so you can download and select the ZIP to continue. For an already stopped installation, download `xrRazom-1.5-Slim.zip`, choose **Settings → xrRazom → Local**, select the ZIP, then click **Resume Install**. Keep saved progress to skip completed stages. The selected ZIP must match the pinned release checksum.
+- xrRazom supports Auto Install and a local ZIP. If an automated download fails, select a downloaded ZIP to continue. For a stopped installation, use **Settings → xrRazom → Open Downloads**, download `xrRazom-1.5-Slim.zip`, choose **Enable** if co-op is disabled, select the ZIP with **Browse**, then click **Resume Install**. Keep saved progress to skip completed stages. The selected ZIP must match the pinned release checksum.
 - For launcher help, select **Support → Launcher Support** to open the [launcher support thread on the ROMEO Discord](https://discord.com/channels/1186516148339081246/1572000028719972432).
 - Follow progress in the live journal. **Support → Open Log Folder** opens the full run logs. **Support → ROMEO Downloads** offers the Drive, mirror and torrent links, plus the Discord release channel and Drive download-limit guide.
 - **Play → Open Mod Organizer** opens MO2. Select the ROMEO profile and run Anomaly (DX11). For co-op, set your xrRazom player name and network options in the game's settings.
@@ -47,7 +47,7 @@ To reset one group immediately, use its **Reset to Fresh Defaults** button. To r
 **Verify → Scan Installation** checks Anomaly 1.5.3 base-file checksums, recognizes supported modded replacements, and checks executables, the ROMEO profile, enabled mod folders and priority. Review the findings before starting a repair.
 
 - **Repair Profile** uses the installed files to repair MO2 configuration when the ROMEO archive is unavailable.
-- **Run Full Repair** uses a selected or retained ROMEO archive to recheck Anomaly, run the selected GAMMA checks and reapply ROMEO, plus xrRazom for co-op installations.
+- **Run Full Repair** uses a selected or retained ROMEO archive to recheck Anomaly, run the selected GAMMA checks and reapply ROMEO, plus xrRazom for co-op installations. Local Anomaly archives are imported only when repair is needed; a local GAMMA archive is imported if Mod Organizer is missing. New verifications start fresh GAMMA checks; resuming the same operation preserves its progress. Final checks run after settings and add-ons are restored and check enabled mod folders and priorities, without hashing every installed mod file.
 - For a full repair, choose whether to **Check MD5** on each GAMMA add-on archive, **Recheck large files**, **Force Git refresh**, **Force extraction**, or **Create per-mod reinstall archives**. Checking every archive can take time and is separate from checking for a launcher update.
 
 ### Share and compare co-op setups

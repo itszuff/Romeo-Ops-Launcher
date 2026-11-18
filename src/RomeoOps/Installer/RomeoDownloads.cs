@@ -40,29 +40,74 @@ public static class RomeoDownloads
         return downloads;
     }
 
-    public static bool Retain(string source, string downloads, string name)
+    public static async Task<bool> RetainAsync(string source, string downloads, string name,
+        CancellationToken token, Action<string, TransferSnapshot>? progress = null)
     {
-        if (!File.Exists(source))
-            throw new PipelineException("Source archive missing: " + source);
+        token.ThrowIfCancellationRequested();
+        if (!File.Exists(source)) throw new PipelineException("Source archive missing: " + source);
         Directory.CreateDirectory(downloads);
         var target = Path.Combine(downloads, name);
-        if (SamePath(source, target))
-            return false;
+        if (SamePath(source, target)) return false;
+        await using var input = OpenRead(source);
         if (File.Exists(target))
         {
-            var sameLength = new FileInfo(source).Length == new FileInfo(target).Length;
-            var sameHash = sameLength && string.Equals(
-                FileHasher.Compute(source, "SHA256"),
-                FileHasher.Compute(target, "SHA256"),
-                StringComparison.OrdinalIgnoreCase);
-            if (!sameHash)
-                throw new PipelineException("A different file already uses the archive name '" + target + "'. It was not overwritten.");
+            await using var existing = OpenRead(target);
+            bool equal = input.Length == existing.Length;
+            if (equal)
+            {
+                var sourceHash = await Hash(input, "Checking source archive");
+                var targetHash = await Hash(existing, "Checking retained archive");
+                equal = sourceHash.SequenceEqual(targetHash);
+            }
+            if (!equal) throw new PipelineException("A different or incomplete file already uses the archive name '" + target + "'. It was not overwritten.");
             return false;
         }
 
-        File.Copy(source, target, overwrite: false);
-        return true;
+        var partial = target + "." + Guid.NewGuid().ToString("N") + ".partial";
+        try
+        {
+            progress?.Invoke("Copying archive to downloads", new(0, input.Length, 0));
+            await using (var output = new FileStream(partial, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                128 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                await Downloader.CopyWithProgress(input, output, input.Length, 0,
+                    snap => progress?.Invoke("Copying archive to downloads", snap), token).ConfigureAwait(false);
+                await output.FlushAsync(token).ConfigureAwait(false);
+            }
+            token.ThrowIfCancellationRequested();
+            File.Move(partial, target);
+            return true;
+        }
+        finally { File.Delete(partial); }
+
+        async Task<byte[]> Hash(FileStream stream, string phase)
+        {
+            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            var buffer = new byte[128 * 1024];
+            var watch = Stopwatch.StartNew();
+            var last = TimeSpan.Zero;
+            long got = 0;
+            progress?.Invoke(phase, new(0, stream.Length, 0));
+            while (true)
+            {
+                int read = await stream.ReadAsync(buffer, token).ConfigureAwait(false);
+                if (read == 0) break;
+                hash.AppendData(buffer, 0, read);
+                got += read;
+                if (watch.Elapsed - last >= TimeSpan.FromMilliseconds(200))
+                {
+                    progress?.Invoke(phase, new(got, stream.Length, got / Math.Max(watch.Elapsed.TotalSeconds, .001)));
+                    last = watch.Elapsed;
+                }
+            }
+            token.ThrowIfCancellationRequested();
+            progress?.Invoke(phase, new(got, stream.Length, got / Math.Max(watch.Elapsed.TotalSeconds, .001)));
+            return hash.GetHashAndReset();
+        }
     }
+
+    private static FileStream OpenRead(string path) => new(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+        128 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
 
     public static string SnapshotFileName(string modName)
     {
@@ -70,7 +115,7 @@ public static class RomeoDownloads
         if (safe.Length > 75)
             safe = safe.Substring(0, 75);
         var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(modName)))[..10];
-        return "ROMEO-2026-11-09-001-" + safe + "-" + digest + ".7z";
+        return "ROMEO-" + Pins.RomeoRelease + "-" + safe + "-" + digest + ".7z";
     }
 
     public static bool IsSeparator(string modName) => SeparatorName.IsMatch(modName);

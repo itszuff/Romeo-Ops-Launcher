@@ -82,6 +82,20 @@ public partial class MainWindow
                 if(meter!=null) meter.Value=value;
                 if(statusView!=null) statusView.Text=$"Scanning {value}%   {file}";
             })));
+            var archiveFindings = new List<string>();
+            if (settings.VerifyRomeoArchive)
+                archiveFindings.Add(ArchiveReference.Check(stack.Layout.State, "romeo", stack.RomeoArchive(settings.RomeoArchive)));
+            if (settings.CoOp && settings.VerifyXrArchive)
+            {
+                var xrArchive = File.Exists(settings.XrArchive) ? settings.XrArchive
+                    : Path.Combine(stack.Layout.Gamma, "downloads", Pins.XrFileName);
+                archiveFindings.Add(ArchiveReference.Check(stack.Layout.State, "xrrazom", xrArchive));
+                try { FileHasher.AssertMatch(xrArchive, "MD5", Pins.XrMd5); }
+                catch (Exception ex) when (ex is IOException or InvalidDataException)
+                { archiveFindings.Add("xrRazom: official ZIP check failed. " + ex.Message); }
+            }
+            if (archiveFindings.Count > 0)
+                findings = string.Join(Environment.NewLine, archiveFindings) + Environment.NewLine + findings;
             journal.Add(findings);
             percent=100; status="Scan complete.";
         }
@@ -108,7 +122,7 @@ public partial class MainWindow
         if(full && !settings.VerifyCheckMd5 && !settings.VerifyForceGit && !settings.VerifyForceExtract && !settings.VerifyLargeFiles)
             scope+=" GAMMA addon checks are off.";
         if(full && settings.CreateSnapshots) scope+=" Missing per-mod reinstall archives will be created.";
-        var review=findings+"\n\n"+scope+" The scan checks base checksums, recognized overlays and profile structure. Individual GAMMA mod contents are checked during full repair.";
+        var review=findings+"\n\n"+scope+" The scan checks Anomaly base checksums, recognized overlays, profile structure, and the ROMEO / xrRazom source archives. GAMMA add-on archive and Git checks run through stalker-gamma-cli during full repair.";
         if(Review("Verify • findings and repair plan",review,possible ? (full?"RUN FULL REPAIR":"REPAIR PROFILE"):null))
             Run(true);
     }

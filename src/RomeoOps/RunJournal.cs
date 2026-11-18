@@ -11,6 +11,7 @@ internal sealed class RunJournal : TextBox
 {
     private const int TailSize = 500;
     private readonly Queue<string> tail = new();
+    private readonly Queue<string> incoming = new();
     private readonly DispatcherTimer refresh;
     private long received;
     private long displayed;
@@ -34,13 +35,25 @@ internal sealed class RunJournal : TextBox
 
     public void Add(string line)
     {
-        tail.Enqueue(line);
-        if (tail.Count > TailSize) tail.Dequeue();
-        received++;
+        lock (incoming)
+        {
+            incoming.Enqueue(line);
+            if (incoming.Count > TailSize) incoming.Dequeue();
+        }
     }
 
     internal void Flush()
     {
+        lock (incoming)
+        {
+            while (incoming.TryDequeue(out var line))
+            {
+                tail.Enqueue(line);
+                if (tail.Count > TailSize) tail.Dequeue();
+                received++;
+            }
+        }
+
         if (displayed == received || SelectionLength > 0) return;
         // Leave the visible text intact while the reader is away from the bottom.
         if (ExtentHeight - ViewportHeight - VerticalOffset > 1) return;

@@ -1,4 +1,4 @@
-﻿using RomeoOps.Installer;
+using RomeoOps.Installer;
 
 namespace RomeoOps;
 
@@ -73,9 +73,11 @@ public static class SetupGate
         if (settings.CoOp && settings.XrSource == "Local")
         {
             if (string.IsNullOrWhiteSpace(settings.XrArchive))
-                problems.Add("Choose the xrRazom zip, or switch xrRazom to Download.");
+                problems.Add("Open the xrRazom download source in Settings, then Browse to the downloaded ZIP.");
             else if (!File.Exists(settings.XrArchive))
                 problems.Add("The xrRazom zip was not found.");
+            else if (!settings.XrArchive.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                problems.Add("The xrRazom archive must be a .zip file.");
         }
 
         return problems;
@@ -125,7 +127,7 @@ public static class SetupGate
     {
         var stored = localPath.Trim();
         var root = installFolder.Trim();
-        if (source == localToken || root.Length == 0)
+        if ((source == localToken && stored.Length > 0) || root.Length == 0)
             return stored;
 
         var destination = Path.Combine(root, child);

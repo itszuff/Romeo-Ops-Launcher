@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.9.4 (2026-11-18)
+
+- Start new GAMMA verifications with fresh progress; retain checkpoints when continuing the same verification.
+- Check Anomaly before importing a local archive, using the archive only for repairs. Keep installed GAMMA base files unless Mod Organizer is missing.
+- Reuse unchanged archive retention checks within a run and centralize the ROMEO release identifier.
+- Extract into staging in one pass, checking extraction success before copying. Reduce per-file archive and copy logging and batch live journal updates.
+- Validate enabled mod folders and priorities after restoring player settings and managed add-ons; report success only after final checks.
+
 ## 2.9.3 (2026-11-17)
 
 - Resolve fresh ModDB mirror links for xrRazom and retry once when a mirror expires.

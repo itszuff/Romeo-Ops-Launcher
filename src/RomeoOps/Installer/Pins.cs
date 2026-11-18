@@ -13,8 +13,10 @@ public static class Pins
     public const string XrFileName = "xrRazom-1.5-Slim.zip";
 
     // The archive still contains the Greek-delta profile. MO2 uses this ASCII alias.
-    public const string RomeoProfile = "ROMEO - 2026-11-09-001";
-    public const string RomeoArchiveFile = "ROMEO-2026-11-09-001.7z";
+    public const string RomeoRelease = "2026-11-09-001";
+    public const string RomeoProfile = "ROMEO - " + RomeoRelease;
+    public const string RomeoArchiveFile = "ROMEO-" + RomeoRelease + ".7z";
+    public const string RomeoStagingFolder = "Romeo-" + RomeoRelease;
     public const string XrModName = "xrRazom Co-op";
     public const string SpeedFixName = "Teepo's Speed Fix";
     public static readonly string[] PriorityMods = { XrModName, SpeedFixName };

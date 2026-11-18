@@ -7,6 +7,7 @@ public sealed class InstallLog : IDisposable
 {
     private readonly Action<LogLine> _publish;
     private StreamWriter? _writer;
+    private readonly object _gate = new();
 
     public InstallLog(Action<LogLine> publish) => _publish = publish;
 
@@ -28,12 +29,15 @@ public sealed class InstallLog : IDisposable
     public void Warning(string message) => Write(message, LogKind.Warning);
     public void Error(string message) => Write(message, LogKind.Error);
     public void Detail(string message) => Write(message, LogKind.Continuation);
-    public void FileOnly(string message) => _writer?.WriteLine(message);
+    public void FileOnly(string message) { lock (_gate) _writer?.WriteLine(message); }
 
     public void Dispose()
     {
-        _writer?.Dispose();
-        _writer = null;
+        lock (_gate)
+        {
+            _writer?.Dispose();
+            _writer = null;
+        }
     }
 
     private void Write(string message, LogKind kind)
@@ -41,7 +45,7 @@ public sealed class InstallLog : IDisposable
         var line = new LogLine(DateTime.Now, message, kind);
         try { _publish(line); }
         catch { }
-        _writer?.WriteLine(line.Display);
+        FileOnly(line.Display);
     }
 }
 

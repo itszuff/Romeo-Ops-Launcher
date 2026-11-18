@@ -58,8 +58,8 @@ public static class InstallationScan
             bool xrEnabled = enabled.Contains(Pins.XrModName, StringComparer.OrdinalIgnoreCase);
             if (xrEnabled != stack.CoOp)
                 issues.Add(stack.CoOp ? "Enable xrRazom in the ROMEO profile." : "Disable xrRazom in the ROMEO profile.");
-            foreach(var name in enabled)
-                if(!Directory.Exists(Path.Combine(layout.Gamma,"mods",name))) issues.Add("Restore missing enabled mod folder: "+name);
+            foreach(var name in InstallationValidation.MissingEnabledMods(layout.Gamma, stack.Profile))
+                issues.Add("Restore missing enabled mod folder: "+name);
             if (!File.ReadLines(stack.Profile).Any(line => line.Length > 1 && line[1..].Equals(CoopAddon.LauncherSeparator, StringComparison.OrdinalIgnoreCase))
                 || !Directory.Exists(Path.Combine(layout.Gamma, "mods", CoopAddon.LauncherSeparator)))
                 issues.Add("Create the Romeo Ops Launcher separator for launcher-managed mods.");

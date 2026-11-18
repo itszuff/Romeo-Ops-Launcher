@@ -28,7 +28,7 @@ public sealed class SavedRun
 
     public static SavedRun ForRequest(PipelineRequest request, SavedRun? pending)
     {
-        if (pending == null) return new SavedRun { Request = request };
+        if (pending == null) return new SavedRun { Request = request, RefreshGammaResume = request.Mode == PipelineMode.Verify };
         if (request == pending.Request) return pending;
         if (request.Mode == PipelineMode.Install && request.InstallCoOp && !pending.Done.Contains("xrRazom files") &&
             request == (pending.Request with { XrArchive = request.XrArchive }))

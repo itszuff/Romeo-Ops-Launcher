@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 
 namespace RomeoOps;
 
@@ -11,20 +11,22 @@ public sealed class AppSettings
     public string GammaPath { get; set; } = "";
     public string RomeoArchive { get; set; } = "";
     public string XrArchive { get; set; } = "";
-    public string AnomalySource { get; set; } = "Download";
-    public string GammaSource { get; set; } = "Download";
+    public string AnomalySource { get; set; } = "Installed";
+    public string GammaSource { get; set; } = "Installed";
     public string XrSource { get; set; } = "Download";
-    public bool CoOp { get; set; } = true;
+    public bool CoOp { get; set; } = false;
     public bool SetupComplete { get; set; }
     public string SetupFingerprint { get; set; } = "";
     public string InstalledFingerprint { get; set; } = "";
     public bool CreateSnapshots { get; set; } = true;
     public bool PreserveUser { get; set; } = true;
     public bool PreserveMcm { get; set; } = true;
-    public bool VerifyCheckMd5 { get; set; }
+    public bool VerifyCheckMd5 { get; set; } = true;
     public bool VerifyForceGit { get; set; }
     public bool VerifyForceExtract { get; set; }
     public bool VerifyLargeFiles { get; set; }
+    public bool VerifyRomeoArchive { get; set; } = true;
+    public bool VerifyXrArchive { get; set; } = true;
 }
 
 public static class SettingsStore
@@ -60,16 +62,15 @@ public static class SettingsStore
             loaded.InstalledFingerprint ??= "";
             loaded.AnomalySource = loaded.AnomalySource is "Local" or "Installed" ? loaded.AnomalySource : "Download";
             loaded.GammaSource = loaded.GammaSource is "Local" or "Installed" ? loaded.GammaSource : "Download";
-            if (text.IndexOf("\"xrSource\"", StringComparison.OrdinalIgnoreCase) < 0)
-                loaded.XrSource = string.IsNullOrWhiteSpace(loaded.XrArchive) ? "Download" : "Local";
-            else
-                loaded.XrSource = loaded.XrSource == "Local" ? "Local" : "Download";
+            loaded.XrSource = loaded.XrSource == "Local" ? "Local" : "Download";
             if (text.IndexOf("\"coOp\"", StringComparison.OrdinalIgnoreCase) < 0)
                 loaded.CoOp = true;
             if (text.IndexOf("\"verifyCheckMd5\"", StringComparison.OrdinalIgnoreCase) < 0)
                 loaded.VerifyCheckMd5 = true;
-            if (text.IndexOf("\"verifyLargeFiles\"", StringComparison.OrdinalIgnoreCase) < 0)
-                loaded.VerifyLargeFiles = true;
+            if (text.IndexOf("\"verifyRomeoArchive\"", StringComparison.OrdinalIgnoreCase) < 0)
+                loaded.VerifyRomeoArchive = true;
+            if (text.IndexOf("\"verifyXrArchive\"", StringComparison.OrdinalIgnoreCase) < 0)
+                loaded.VerifyXrArchive = true;
             return loaded;
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
@@ -114,7 +115,11 @@ public static class SettingsStore
         InstallFolder = @"C:\StalkerRomeo",
         CoOp = false,
         VerifyCheckMd5 = true,
-        VerifyLargeFiles = true
+        VerifyLargeFiles = false,
+        VerifyForceGit = false,
+        VerifyForceExtract = false,
+        VerifyRomeoArchive = true,
+        VerifyXrArchive = true
     };
 
     public static void Save(AppSettings settings)

@@ -222,20 +222,20 @@ public partial class MainWindow : Window
         Put(Page,Picture("directory"),0,0,170,12);
         Info(163,-4,"Installation directory","Choose the parent folder for Anomaly and GAMMA. To verify an existing installation, select the folder that contains both games.");
         PathField(0,20,true,"Installation directory",settings.InstallFolder,v=>{ settings.InstallFolder=v; RefreshDetection(); },true);
-        Component(62,"anomaly",settings.AnomalySource, v=>settings.AnomalySource=v,settings.AnomalySource=="Installed" ? settings.AnomalyPath : settings.AnomalyZip,v=>settings.AnomalyZip=v);
-        Component(124,"gamma",settings.GammaSource,v=>settings.GammaSource=v,settings.GammaSource=="Installed" ? settings.GammaPath : settings.GammaZip,v=>settings.GammaZip=v);
-        Component(186,"romeo","Local",_=>{},settings.RomeoArchive,v=>settings.RomeoArchive=v);
-        Component(248,"xrrazom",settings.CoOp ? settings.XrSource : "Disable",v=>{settings.CoOp=v!="Disable"; settings.XrSource=v=="Local" ? "Local":"Download";},settings.XrArchive,v=>settings.XrArchive=v);
-        Put(Page,Picture("instructions"),0,319,140,14);
-        string[] lines = { "Choose the installation folder for downloaded game files.",
-            "Download Anomaly and G.A.M.M.A. or choose local .zip or .7z archives.",
-            "Select the ROMEO .7z. For xrRazom, download, choose a ZIP, or disable co-op.",
+        Component(72,"anomaly",settings.AnomalySource, v=>settings.AnomalySource=v,settings.AnomalySource=="Installed" ? SetupGate.AnomalyFolder(settings) : settings.AnomalyZip,v=>{ if(settings.AnomalySource=="Installed") settings.AnomalyPath=v; else settings.AnomalyZip=v; });
+        Component(144,"gamma",settings.GammaSource,v=>settings.GammaSource=v,settings.GammaSource=="Installed" ? SetupGate.GammaFolder(settings) : settings.GammaZip,v=>{ if(settings.GammaSource=="Installed") settings.GammaPath=v; else settings.GammaZip=v; });
+        Component(216,"romeo","Local",_=>{},settings.RomeoArchive,v=>settings.RomeoArchive=v);
+        Component(288,"xrrazom",settings.CoOp ? settings.XrSource : "Disable",v=>{settings.CoOp=v!="Disable"; if(settings.CoOp) settings.XrSource=v;},settings.XrArchive,v=>settings.XrArchive=v);
+        Put(Page,Picture("instructions"),0,359,140,14);
+        string[] lines = { "Choose an existing installation folder, or a destination for a new install.",
+            "Use Anomaly / GAMMA folders, local archives, or automatic install.",
+            "Browse to your ROMEO archive; choose Auto Install or Archive for xrRazom.",
             "Open INSTALL to review your choices and begin installation." };
         for (int i=0;i<lines.Length;i++)
         {
-            Put(Page,new Border { Background=Ink },0,340+i*26,19,19);
-            Label(4,336+i*26,15,26,(i+1).ToString(),21,true).Foreground=Brushes.White;
-            Label(31,339+i*26,499,25,lines[i],16);
+            Put(Page,new Border { Background=Ink },0,380+i*22,19,19);
+            Label(4,376+i*22,15,26,(i+1).ToString(),21,true).Foreground=Brushes.White;
+            Label(31,379+i*22,499,25,lines[i],16);
         }
         PreferenceControls();
         detectedLabel=Label(0,540,530,30,"Existing Anomaly, GAMMA and ROMEO installation detected.",18,true);
@@ -245,43 +245,63 @@ public partial class MainWindow : Window
     private void Component(int y,string id,string mode,Action<string> select,string path,Action<string> change)
     {
         Put(Page,Picture(id),0,y-1,140,14);
-        var (offset, help) = id switch
-        {
-            "anomaly" => (61, "Download fetches the base game during installation. Local uses the Anomaly archive you select."),
-            "gamma" => (64, "Download fetches GAMMA during installation. Local uses the GAMMA archive you select."),
-            "romeo" => (44, "Choose a download source, save the ROMEO .7z, then select it with Browse."),
-            _ => (101, "xrRazom adds co-op support. Download fetches it during installation, Local uses a ZIP, and Disable skips co-op.")
-        };
-        Info(offset,y-5,id,help);
-        var choices=id=="xrrazom" ? new[]{"Disable","Download","Local"} : new[]{"Download","Local"};
+        bool game = id is "anomaly" or "gamma";
+        Info(id=="anomaly" ? 61 : id=="gamma" ? 64 : id=="romeo" ? 44 : 101,y-5,id,
+            game ? "Use an existing installation folder, select a local ZIP / 7z, or install automatically."
+                : id=="xrrazom" ? "Automatically download the verified Slim ZIP from ModDB, select a local ZIP, or disable co-op. If ModDB blocks the request, a browser download is offered."
+                : "Open the download source, save the archive, then select it with Browse. The launcher installs the archive.");
         int x=0;
+        if (id=="romeo")
+        {
+            var source=Outline(Action(Page,0,y+20,145,29,"OPEN DOWNLOADS",()=>{
+                if(id=="romeo") ShowRomeoDownloads(); else Open(Pins.XrReferer);
+            }));
+            AutomationProperties.SetName(source,id+" Open downloads");
+            source.ToolTip="Open download sources, then select the downloaded archive with Browse";
+            x=149;
+        }
+        var choices=game ? new[]{"Download","Installed","Local"} : id=="xrrazom" ? new[]{"Download","Local","Disable"} : Array.Empty<string>();
         foreach (var choice in choices)
         {
-            bool active=mode==choice || choice=="Local" && mode=="Installed";
-            int width = choice == "Download" ? 85 : choice == "Disable" ? 65 : 54;
-            var b=Action(Page,x,y+20,width,29,choice.ToUpperInvariant(),()=>{
-                if (id=="romeo" && choice=="Download") { ShowRomeoDownloads(); return; }
-                select(choice); Save(); Show(current);
-            });
-            if (!active) Outline(b);
-            b.ToolTip=id=="romeo" && choice=="Download" ? "Choose a source for the ROMEO .7z" : choice+" "+id;
+            string caption=choice switch { "Installed"=>"FOLDER", "Download"=>"AUTO INSTALL", "Local"=>"ARCHIVE", "Enable"=>"ENABLE", _=>"DISABLE" };
+            int width=choice=="Download" ? 100 : 67;
+            var b=Action(Page,x,y+20,width,29,caption,()=>{ select(choice=="Enable" ? "Local" : choice); Save(); Show(current); });
+            if(mode!=choice) Outline(b);
+            b.ToolTip=choice=="Installed" ? "Select an existing installation folder" : choice=="Download" ? "Install automatically" : choice=="Local" ? "Select a local archive" : choice=="Enable" ? "Enable co-op using a local ZIP" : "Disable co-op";
             AutomationProperties.SetName(b,id+" "+choice);
             x+=width+4;
         }
-        PathField(x,y+20,false,id,mode=="Installed" ? "" : path,change,mode=="Local");
+        PathField(x,y+20,mode=="Installed",id,path,change,mode is "Local" or "Installed");
     }
+
     private void PathField(int x,int y,bool folder,string name,string value,Action<string> change,bool enabled)
     {
         var box=Put(Page,new TextBox { Text=enabled ? value : "", IsEnabled=enabled, VerticalContentAlignment=VerticalAlignment.Center,
             FontFamily=new FontFamily("Consolas"), FontSize=11, Foreground=Brushes.DarkGreen, BorderBrush=enabled ? Ink:Gray,
             Padding=new Thickness(5,0,2,0), Background=Brushes.White },x,y,460-x,29);
         AutomationProperties.SetName(box,name+" path"); box.ToolTip=folder ? "Choose a folder" : "Choose the "+name+" archive";
-        box.TextChanged+=(_,_)=>change(box.Text.Trim());
+        var validation=Label(x,y+31,530-x,13,"",11);
+        void ValidatePath()
+        {
+            string selected=box.Text.Trim();
+            bool valid=folder ? name=="anomaly" ? File.Exists(Path.Combine(selected,"AnomalyLauncher.exe"))
+                : name=="gamma" ? File.Exists(Path.Combine(selected,"ModOrganizer.exe")) : Directory.Exists(selected)
+                : File.Exists(selected) && (name=="romeo" ? selected.EndsWith(".7z",StringComparison.OrdinalIgnoreCase)
+                    : name=="xrrazom" ? selected.EndsWith(".zip",StringComparison.OrdinalIgnoreCase)
+                    : selected.EndsWith(".zip",StringComparison.OrdinalIgnoreCase) || selected.EndsWith(".7z",StringComparison.OrdinalIgnoreCase));
+            validation.Text=!enabled ? "" : selected.Length==0 ? (folder ? "Choose an existing folder" : "Choose a downloaded archive")
+                : valid ? (folder ? "Folder found" : "Archive found; checked during install")
+                : folder && name=="Installation directory" ? "New installation destination" : "Not found or unsupported selection";
+            validation.Foreground=valid ? Brushes.DarkGreen : Ink;
+        }
+        ValidatePath();
+        box.TextChanged+=(_,_)=>{ change(box.Text.Trim()); ValidatePath(); };
         box.LostKeyboardFocus+=(_,_)=>Save();
         var browse=Action(Page,464,y,66,29,"BROWSE",()=>{
             if (folder) { var picker=new OpenFolderDialog { Title="Choose "+name+" folder" }; if(picker.ShowDialog(this)==true) box.Text=picker.FolderName; }
             else { var picker=new OpenFileDialog {Title="Choose "+name+" archive",Filter=name=="romeo" ? "ROMEO archive (*.7z)|*.7z" : name=="xrrazom" ? "xrRazom archive (*.zip)|*.zip" : "Game archives (*.zip, *.7z)|*.zip;*.7z"}; if(picker.ShowDialog(this)==true) box.Text=picker.FileName; }
             Save();
+            if(folder) Show(current);
         });
         browse.IsEnabled=enabled; browse.Background=enabled ? Ink:Gray; AutomationProperties.SetName(browse,"Browse "+name);
     }
@@ -318,8 +338,8 @@ public partial class MainWindow : Window
                 catch(Exception ex) {MessageBox.Show(this,ex.Message,"Player settings");}
             }));
         }
-        Row(463,"Preserve user.ltx",true);
-        Row(496,"Preserve MCM options and keybinds",false);
+        Row(483,"Preserve user.ltx",true);
+        Row(516,"Preserve MCM options and keybinds",false);
         Info(317,582,"Restore from backup","Choose a dated player-settings backup, then select which settings to restore.");
         Outline(Action(Page,341,575,189,34,"RESTORE FROM BACKUP",PickBackup));
     }
@@ -449,10 +469,11 @@ public partial class MainWindow : Window
         {
             var toggle = new System.Windows.Controls.Primitives.ToggleButton
             {
-                Content = verifyOptionsExpanded ? "Hide verify options" : "Show verify options",
+                Content = verifyOptionsExpanded ? "-  HIDE VERIFY OPTIONS" : "+  VERIFY OPTIONS",
+                Style = (Style)FindResource("VerifyOptionsToggle"),
                 IsChecked = verifyOptionsExpanded, FontFamily = ActionFont, FontSize = 16
             };
-            Put(Page, toggle, 0, row, 148, 28);
+            Put(Page, toggle, 0, row, 178, 30);
             toggle.Click += (_, _) =>
             {
                 verifyOptionsExpanded = toggle.IsChecked == true;
@@ -509,14 +530,19 @@ public partial class MainWindow : Window
             meterY = row + 44 + (message.Length == 0 ? 0 : statusView.DesiredSize.Height);
         }
         meter=Put(Page,new ProgressBar {Minimum=0,Maximum=100,Value=percent,Foreground=Red,Background=Brushes.WhiteSmoke},0,meterY,530,5);
-        Put(Page,journal,0,meterY+10,530,Math.Max(0,595-meterY-10));
+        double journalHeight = Math.Max(0,595-meterY-10);
+        if (verify && operation == null) journalHeight = Math.Min(120, journalHeight);
+        Put(Page,journal,0,meterY+10,530,journalHeight);
+        if (verify && operation == null && journal.Text.Length == 0)
+            Label(12,meterY+20,500,25,"Scan activity will appear here.",15).Foreground = Brushes.DimGray;
     }
     private int ShowVerifyOptions(bool fullRepair, int top)
     {
         var options = new StackPanel();
-        const int height = 178;
-        Put(Page, new ScrollViewer { Content = options, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }, 0, top, 530, height);
+        const int height = 310;
+        Put(Page, new Border { Child = options, Background = BrushesFrom("#F6F6F6"),
+            BorderBrush = BrushesFrom("#DDDDDD"), BorderThickness = new Thickness(1),
+            Padding = new Thickness(12, 8, 12, 8), CornerRadius = new CornerRadius(4) }, 0, top, 530, height);
         var components = new Grid { Margin = new Thickness(0, 0, 0, 8) };
         components.ColumnDefinitions.Add(new ColumnDefinition());
         components.ColumnDefinitions.Add(new ColumnDefinition());
@@ -550,50 +576,59 @@ public partial class MainWindow : Window
             FontFamily = Condensed, FontSize = 15, Foreground = Ink
         });
 
-        void Group(string title)
+        var groups = new Grid { Margin = new Thickness(0, 7, 0, 0) };
+        groups.ColumnDefinitions.Add(new ColumnDefinition());
+        groups.ColumnDefinitions.Add(new ColumnDefinition());
+        options.Children.Add(groups);
+        var repair = new StackPanel();
+        var refresh = new StackPanel { Margin = new Thickness(8, 0, 0, 0) };
+        Grid.SetColumn(refresh, 1);
+        groups.Children.Add(repair);
+        groups.Children.Add(refresh);
+
+        void Group(StackPanel host, string title)
         {
-            options.Children.Add(new TextBlock
-            {
-                Text = title, FontFamily = ActionFont, FontSize = 16, Foreground = Red,
-                Margin = new Thickness(0, 5, 0, 1)
-            });
+            host.Children.Add(new TextBlock { Text = title, FontFamily = ActionFont,
+                FontSize = 16, Foreground = Red, Margin = new Thickness(0, 0, 0, 4) });
         }
 
-        void Option(string name, string use, bool selected, Action<bool> change)
+        void Option(StackPanel host, string name, string use, bool selected, Action<bool> change, bool requiresFullRepair = true)
         {
-            var content = new Grid { Width = 482 };
-            content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(169) });
-            content.ColumnDefinitions.Add(new ColumnDefinition());
-            content.Children.Add(new TextBlock { Text = name, FontFamily = ActionFont, FontSize = 15 });
-            var description = new TextBlock { Text = use, FontSize = 15, TextWrapping = TextWrapping.Wrap };
-            Grid.SetColumn(description, 1);
-            content.Children.Add(description);
             var check = new CheckBox
             {
-                Content = content, FontFamily = Condensed, IsChecked = selected, IsEnabled = fullRepair,
-                VerticalContentAlignment = VerticalAlignment.Center, MinHeight = 23
+                Content = name, FontFamily = ActionFont, FontSize = 15,
+                Foreground = Ink, IsChecked = selected, IsEnabled = !requiresFullRepair || fullRepair,
+                Style = (Style)FindResource("VerifyOptionCheckBox"), MinHeight = 25,
+                ToolTip = new TextBlock { Text = use, MaxWidth = 285, TextWrapping = TextWrapping.Wrap }
             };
             AutomationProperties.SetName(check, name);
             AutomationProperties.SetHelpText(check, use);
+            ToolTipService.SetShowsToolTipOnKeyboardFocus(check, true);
+            ToolTipService.SetShowOnDisabled(check, true);
             check.Click += (_, _) => { change(check.IsChecked == true); Save(); };
-            options.Children.Add(check);
+            host.Children.Add(check);
         }
 
-        Group("Repair GAMMA files");
-        Option("Check archive hashes (MD5)", "Use if a GAMMA add-on download may be corrupt.",
+        Group(repair, "Repair GAMMA files");
+        Option(repair, "Check archive hashes (MD5)", "Use if a GAMMA add-on download may be corrupt.",
             settings.VerifyCheckMd5, v => settings.VerifyCheckMd5 = v);
-        Option("Extract archives again", "Use if installed mod files are missing or were edited.",
+        Option(repair, "Extract archives again", "Use if installed mod files are missing or were edited.",
             settings.VerifyForceExtract, v => settings.VerifyForceExtract = v);
-
-        Group("Refresh GAMMA downloads");
-        Option("Refresh GitHub files", "Use if GitHub add-ons or setup repositories are out of date.",
+        Group(refresh, "Refresh GAMMA downloads");
+        Option(refresh, "Refresh GitHub files", "Use if GitHub add-ons or setup repositories are out of date.",
             settings.VerifyForceGit, v => settings.VerifyForceGit = v);
-        Option("Refresh large files", "Use if the GAMMA large-files download was interrupted or is stale.",
+        Option(refresh, "Refresh large files", "Use if the GAMMA large-files download was interrupted or is stale.",
             settings.VerifyLargeFiles, v => settings.VerifyLargeFiles = v);
-
-        Group("Reinstall individual mods");
-        Option("Save per-mod archives", "Use to reinstall ROMEO mods later in MO2. Uses extra disk space.",
-            settings.CreateSnapshots, v => settings.CreateSnapshots = v);
+        Group(options, "ROMEO archive checks");
+        Option(options, "Check ROMEO archive", "Compare the retained ROMEO .7z SHA-256 with the reference recorded after install or repair.",
+            settings.VerifyRomeoArchive, v => settings.VerifyRomeoArchive = v, requiresFullRepair: false);
+        Option(options, "Check xrRazom archive", "When co-op is enabled, check its recorded SHA-256 and official archive MD5.",
+            settings.VerifyXrArchive, v => settings.VerifyXrArchive = v, requiresFullRepair: false);
+        options.Children.Add(new TextBlock { Text = fullRepair
+            ? "Hover or focus an option for details."
+            : "Select a ROMEO archive in Settings to enable repair options.",
+            FontFamily = Condensed, FontSize = 14, Foreground = Brushes.DimGray,
+            Margin = new Thickness(0, 5, 0, 0) });
 
         return height;
     }
@@ -618,7 +653,7 @@ public partial class MainWindow : Window
             VerifyCheckMd5=settings.VerifyCheckMd5,VerifyLargeFiles=settings.VerifyLargeFiles,VerifyForceExtract=settings.VerifyForceExtract,VerifyForceGit=settings.VerifyForceGit };
         var engine=new InstallPipeline(new PipelineCallbacks {
             PickXrArchive=()=>PickBrowserDownload("xrRazom 1.5 Slim", Pins.XrReferer),
-            Log=line=>Dispatcher.Invoke(()=>journal.Add(line.Display)),
+            Log=line=>journal.Add(line.Display),
             Progress=p=>Dispatcher.Invoke(()=>{percent=Math.Clamp(p.Percent,0,100); status=$"{percent}%   {p.Step}\n{p.Detail}"; if(statusView!=null) statusView.Text=status; if(meter!=null) meter.Value=percent;}),
             Confirm=message=>Dispatcher.Invoke(()=>MessageBox.Show(this,message,"ROMEO OPS",MessageBoxButton.YesNo,MessageBoxImage.Question)==MessageBoxResult.Yes)
         });

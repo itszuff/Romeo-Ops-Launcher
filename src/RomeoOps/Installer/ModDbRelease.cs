@@ -80,9 +80,20 @@ public static class ModDbRelease
     {
         var url=FindLink(html,new Uri(pageUrl),true) ?? throw new InvalidDataException("Download link unavailable.");
         var referer=pageUrl;
+        var alternatives = new Queue<Uri>();
+        bool listedMirrors = false;
         for(int hop=0;hop<5;hop++)
         {
-            using var response=await Get(client,url.AbsoluteUri,referer,token);
+            HttpResponseMessage response;
+            try { response=await Get(client,url.AbsoluteUri,referer,token); }
+            catch (HttpRequestException ex) when (alternatives.Count > 0 &&
+                ex.StatusCode is HttpStatusCode.BadGateway or HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2), token);
+                url = alternatives.Dequeue();
+                continue;
+            }
+            using var ownedResponse = response;
             var final=response.RequestMessage!.RequestUri!;
             if(!Trusted(final)) throw new InvalidDataException("Unrecognized mirror host.");
             using var input=await response.Content.ReadAsStreamAsync(token);
@@ -100,7 +111,21 @@ public static class ModDbRelease
             }
             using var reader=new StreamReader(input);
             var markup=System.Text.Encoding.ASCII.GetString(header)+await reader.ReadToEndAsync(token);
-            url=FindLink(markup,final,false) ?? throw new InvalidDataException("ModDB requires a browser to choose a mirror.");
+            // Ask ModDB for its current mirror choices, never persist expiring mirror tokens.
+            var all = FindAllMirrors(markup, final);
+            if (!listedMirrors && all != null)
+            {
+                listedMirrors = true;
+                url = all;
+                referer = final.AbsoluteUri;
+                continue;
+            }
+            var mirrors = FindMirrors(markup, final);
+            if (mirrors.Length == 0) throw new InvalidDataException("ModDB requires a browser to choose a mirror.");
+            // Spread downloads across advertised mirrors rather than always choosing the first.
+            if (listedMirrors && mirrors.Length > 1) Random.Shared.Shuffle(mirrors);
+            url = mirrors[0];
+            alternatives = new Queue<Uri>(mirrors.Skip(1).Take(2));
             referer=final.AbsoluteUri;
         }
         throw new IOException("ModDB returned too many mirror pages.");
@@ -147,6 +172,22 @@ public static class ModDbRelease
         catch {spool.Dispose();throw;}
     }
     private static bool Trusted(Uri uri) => uri.Scheme=="https" && new[]{"moddb.com","dbolical.com","modcdn.io"}.Any(h=>uri.Host==h || uri.Host.EndsWith("."+h,StringComparison.OrdinalIgnoreCase));
+    public static Uri? FindAllMirrors(string html, Uri page) => ParsedLinks(html, page)
+        .FirstOrDefault(link => Regex.IsMatch(link.AbsolutePath, @"^/(addons|downloads)/start/\d+/all/?$"));
+
+    public static Uri[] FindMirrors(string html, Uri page) => ParsedLinks(html, page)
+        .Where(link => Regex.IsMatch(link.AbsolutePath, @"^/(addons|downloads)/mirror/|^/dl/|\.zip$", RegexOptions.IgnoreCase))
+        .Distinct().ToArray();
+
+    private static IEnumerable<Uri> ParsedLinks(string html, Uri page)
+    {
+        foreach (Match match in Links.Matches(html))
+        {
+            string raw = WebUtility.HtmlDecode(match.Groups["url"].Value);
+            if (raw.Contains("url=", StringComparison.OrdinalIgnoreCase)) raw = raw[(raw.IndexOf("url=", StringComparison.OrdinalIgnoreCase)+4)..].Trim();
+            if (Uri.TryCreate(page, raw, out var link) && Trusted(link)) yield return link;
+        }
+    }
     public static Uri? FindLink(string html, Uri page,bool start)
     {
         foreach(Match match in Links.Matches(html))
