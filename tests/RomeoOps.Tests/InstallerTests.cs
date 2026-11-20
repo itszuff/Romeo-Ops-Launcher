@@ -30,6 +30,25 @@ public class InstallerTests
         Assert.True(ran);
     }
 
+    [Fact]
+    public void MissingMo2ConfigurationIsCreatedOnceAndPreservesUserEdits()
+    {
+        var root = TempDir();
+        var layout = InstallLayout.Create(Path.Combine(root, "Anomaly, custom; folder"), Path.Combine(root, "GAMMA"));
+        Directory.CreateDirectory(layout.Gamma);
+        File.WriteAllText(Path.Combine(layout.Gamma, "ModOrganizer.exe"), "");
+        Assert.True(Mo2Profile.EnsureConfiguration(layout));
+        var ini = Path.Combine(layout.Gamma, "ModOrganizer.ini");
+        var content = File.ReadAllText(ini);
+        Assert.Contains("gamePath=\"" + layout.Anomaly.Replace('\\', '/') + "\"", content);
+        Assert.Equal(9, Mo2Profile.SetSteamAppId(ini, layout.Backups));
+        Mo2Profile.SetSelectedProfile(ini, layout.Backups);
+        File.AppendAllText(ini, "\n[Settings]\ncustom=value\n");
+        var original = File.ReadAllBytes(ini);
+        Assert.False(Mo2Profile.EnsureConfiguration(layout));
+        Assert.Equal(original, File.ReadAllBytes(ini));
+    }
+
     [Theory]
     [InlineData(true, "Download")]
     [InlineData(true, "Local")]
@@ -536,8 +555,10 @@ public class InstallerTests
         }
     }
 
-    [Fact]
-    public async Task DetectAndRepairIndependentInstallationWithoutSources()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DetectAndRepairIndependentInstallationWithoutSources(bool missingIni)
     {
         var root = TempDir();
         var anomaly = Directory.CreateDirectory(Path.Combine(root, "Anomaly 1.5.3")).FullName;
@@ -551,7 +572,8 @@ public class InstallerTests
         foreach (var mod in new[] { "Other", Pins.XrModName, Pins.SpeedFixName })
             Directory.CreateDirectory(Path.Combine(gamma, "mods", mod, "gamedata"));
         var ini = Path.Combine(gamma, "ModOrganizer.ini");
-        File.WriteAllText(ini, "[General]\r\nselected_profile=wrong\r\n[customExecutables]\r\n1\\binary=some.exe\r\n1\\steamAppID=0\r\n");
+        if (!missingIni)
+            File.WriteAllText(ini, "[General]\r\nselected_profile=wrong\r\n[customExecutables]\r\n1\\binary=some.exe\r\n1\\steamAppID=0\r\n");
         var detected = ExistingStack.Detect(root);
         Assert.NotNull(detected);
         Assert.True(detected.CoOp);
@@ -562,6 +584,13 @@ public class InstallerTests
         Assert.True(result.Success, result.Error);
         Assert.Contains(Pins.RomeoProfile, File.ReadAllText(ini));
         Assert.Contains("steamAppID=480", File.ReadAllText(ini));
+        if (missingIni)
+        {
+            Assert.Contains(anomaly.Replace('\\', '/') + "/bin/AnomalyDX11.exe", File.ReadAllText(ini));
+            Assert.Contains("gameName=STALKER Anomaly", File.ReadAllText(ini));
+        }
+        else
+            Assert.Contains("1\\binary=some.exe", File.ReadAllText(ini));
         Assert.Equal("+" + Pins.XrModName, File.ReadAllLines(list)[0]);
         Directory.CreateDirectory(Path.Combine(gamma,"downloads"));
         var retained = Path.Combine(gamma, "downloads", Pins.RomeoArchiveFile);

@@ -5,6 +5,53 @@ namespace RomeoOps.Installer;
 
 public static class Mo2Profile
 {
+    // Local GAMMA archives can contain MO2 without its machine-specific configuration.
+    public static bool EnsureConfiguration(InstallLayout layout)
+    {
+        var ini = Path.Combine(layout.Gamma, "ModOrganizer.ini");
+        if (File.Exists(ini)) return false;
+        if (!File.Exists(Path.Combine(layout.Gamma, "ModOrganizer.exe")))
+            throw new PipelineException("Cannot configure Mod Organizer: ModOrganizer.exe is missing.");
+
+        var anomaly = Path.GetFullPath(layout.Anomaly).Replace('\\', '/').TrimEnd('/');
+        // Quote QSettings strings so commas and semicolons in folder names stay literal.
+        static string Value(string value) => "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+        var entries = new List<(string Title, string Binary, string Directory)>
+        {
+            ("Anomaly Launcher", anomaly + "/AnomalyLauncher.exe", anomaly)
+        };
+        foreach (var renderer in new[] { "DX11AVX", "DX11", "DX10AVX", "DX10", "DX9AVX", "DX9", "DX8AVX", "DX8" })
+            entries.Add(("Anomaly (" + renderer.Replace("AVX", "-AVX") + ")",
+                anomaly + "/bin/Anomaly" + renderer + ".exe", anomaly + "/bin"));
+
+        var text = new StringBuilder();
+        text.AppendLine("[General]");
+        text.AppendLine("gameName=STALKER Anomaly");
+        text.AppendLine("gamePath=" + Value(anomaly));
+        text.AppendLine("selected_profile=@ByteArray(" + Pins.RomeoProfile + ")");
+        text.AppendLine("first_start=false");
+        text.AppendLine();
+        text.AppendLine("[customExecutables]");
+        text.AppendLine("size=" + entries.Count);
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var prefix = (i + 1) + "\\";
+            var entry = entries[i];
+            text.AppendLine(prefix + "title=" + Value(entry.Title));
+            text.AppendLine(prefix + "binary=" + Value(entry.Binary));
+            text.AppendLine(prefix + "workingDirectory=" + Value(entry.Directory));
+            text.AppendLine(prefix + "arguments=");
+            text.AppendLine(prefix + "steamAppID=480");
+            text.AppendLine(prefix + "hide=false");
+            text.AppendLine(prefix + "ownicon=true");
+            text.AppendLine(prefix + "toolbar=false");
+        }
+        using var stream = new FileStream(ini, FileMode.CreateNew, FileAccess.Write);
+        using var writer = new StreamWriter(stream, new UTF8Encoding(false));
+        writer.Write(text.ToString());
+        return true;
+    }
+
     public static string? FindSource(string gamma)
     {
         var profiles = Path.Combine(gamma, "profiles");

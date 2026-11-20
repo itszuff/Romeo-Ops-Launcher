@@ -836,6 +836,8 @@ public sealed class InstallPipeline
         if (!request.InstallCoOp)
             ModlistEditor.Disable(layout.Modlist, Pins.XrModName);
         ModlistEditor.SetPriorityOrder(layout.Modlist, priority);
+        if (Mo2Profile.EnsureConfiguration(layout))
+            _log.Info("Created missing ModOrganizer.ini for the selected Anomaly installation.");
         if (cli != null) await SelectRomeoProfileAsync(cli, cancellationToken).ConfigureAwait(false);
         var ini = Path.Combine(layout.Gamma, "ModOrganizer.ini");
         Mo2Profile.SetSelectedProfile(ini, layout.Backups);

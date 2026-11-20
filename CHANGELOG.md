@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.9.5 (2026-11-20)
+
+- Create a missing ModOrganizer.ini before selecting the ROMEO profile. Local GAMMA archive installs can now finish without first opening Mod Organizer.
+- Configure Anomaly launch entries using the selected game folder while preserving existing MO2 configurations.
+- Resume affected installs from their saved checkpoint. Required-mod validation, including Teepo's Speed Fix from GAMMA, remains enabled.
+
 ## 2.9.4 (2026-11-18)
 
 - Start new GAMMA verifications with fresh progress; retain checkpoints when continuing the same verification.
