@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.9.6 (2026-11-20)
+
+- Install Teepo's Speed Fix from GAMMA RC3's bundled add-on resources when its MO2 mod folder is missing. No separate download is needed when these files are present.
+- Support this recovery during install finalization, co-op setup, resumed installs, and profile repair; preserve existing installed copies.
+- Explain both searched locations and recovery steps when the bundled files are unavailable. Check before creating reinstall snapshots.
+
 ## 2.9.5 (2026-11-20)
 
 - Create a missing ModOrganizer.ini before selecting the ROMEO profile. Local GAMMA archive installs can now finish without first opening Mod Organizer.

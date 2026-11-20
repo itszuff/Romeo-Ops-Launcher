@@ -723,6 +723,7 @@ public sealed class InstallPipeline
         Directory.CreateDirectory(layout.Backups);
         var modlistBackup = Path.Combine(layout.Backups, "ROMEO-modlist-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".txt");
         File.Copy(layout.Modlist, modlistBackup, overwrite: true);
+        await EnsureBundledSpeedFixAsync(layout, cancellationToken).ConfigureAwait(false);
         RequirePriorityMods(layout, Pins.PriorityMods);
         ModlistEditor.SetPriorityOrder(layout.Modlist, Pins.PriorityMods);
 
@@ -797,6 +798,7 @@ public sealed class InstallPipeline
     {
         BeginStep("FINAL MO2 REPAIRS", 97, 100);
         CloseOwnMo2(layout.Gamma);
+        await EnsureBundledSpeedFixAsync(layout, cancellationToken).ConfigureAwait(false);
         _log.Info("Checking / retaining the ROMEO archive in GAMMA\\downloads before starting 7-Zip.");
         var downloads = RomeoDownloads.Ensure(layout.Gamma, layout.Cache);
         if (await RetainArchiveAsync(request.RomeoArchive, downloads, Pins.RomeoArchiveFile, cancellationToken))
@@ -832,6 +834,7 @@ public sealed class InstallPipeline
         Directory.CreateDirectory(layout.Backups);
         File.Copy(layout.Modlist, Path.Combine(layout.Backups, "ROMEO-modlist-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".txt"), overwrite: true);
         var priority = request.InstallCoOp ? Pins.PriorityMods : new[] { Pins.SpeedFixName };
+        await EnsureBundledSpeedFixAsync(layout, cancellationToken).ConfigureAwait(false);
         RequirePriorityMods(layout, priority);
         if (!request.InstallCoOp)
             ModlistEditor.Disable(layout.Modlist, Pins.XrModName);
@@ -948,6 +951,32 @@ public sealed class InstallPipeline
 
             RomeoDownloads.SetInstallationFile(installed, snapshot, layout.Backups);
         }
+    }
+
+    private async Task EnsureBundledSpeedFixAsync(InstallLayout layout, CancellationToken token)
+    {
+        var destination = Path.Combine(layout.Gamma, "mods", Pins.SpeedFixName);
+        if (Directory.Exists(destination)) return;
+        var source = Path.Combine(layout.Gamma, ".Grok's Modpack Installer", "resources",
+            "Stalker_GAMMA", "G.A.M.M.A", "modpack_addons", Pins.SpeedFixName);
+        var data = Path.Combine(source, "gamedata");
+        if (!Directory.Exists(data) || !Directory.EnumerateFiles(data, "*", SearchOption.AllDirectories).Any())
+            throw new PipelineException("Teepo's Speed Fix is included with GAMMA; a separate download is not normally needed. "
+                + "No installed copy was found at '" + destination + "', and its bundled game files were not found at '" + source
+                + "'. Restore this add-on from your complete GAMMA RC3 package, then Resume Install or Repair Profile.");
+
+        _log.Info("Installing Teepo's Speed Fix from GAMMA's bundled add-on resources. No separate download is needed.");
+        // Publish only a complete copy, so cancellation cannot leave a folder that passes the presence check.
+        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+        var temporary = Path.Combine(Path.GetDirectoryName(destination)!, ".romeo-speedfix-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            await CopyTreeAsync(source, temporary, token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            Directory.Move(temporary, destination);
+        }
+        finally { TryDeleteDirectory(temporary); }
+        _log.Success("Teepo's Speed Fix installed in GAMMA\\mods.");
     }
 
     private static void RequirePriorityMods(InstallLayout layout, IReadOnlyList<string> names)

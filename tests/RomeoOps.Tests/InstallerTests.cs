@@ -556,9 +556,11 @@ public class InstallerTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task DetectAndRepairIndependentInstallationWithoutSources(bool missingIni)
+    [InlineData(false, false, true)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, true)]
+    [InlineData(true, true, false)]
+    public async Task DetectAndRepairIndependentInstallationWithoutSources(bool missingIni, bool bundledSpeedFix, bool coop)
     {
         var root = TempDir();
         var anomaly = Directory.CreateDirectory(Path.Combine(root, "Anomaly 1.5.3")).FullName;
@@ -568,15 +570,28 @@ public class InstallerTests
         Assert.Null(ExistingStack.Detect(root));
         var profile = Directory.CreateDirectory(Path.Combine(gamma, "profiles", Pins.RomeoProfile)).FullName;
         var list = Path.Combine(profile, "modlist.txt");
-        File.WriteAllLines(list, new[] { "+Other", "+" + Pins.XrModName, "+" + Pins.SpeedFixName });
+        File.WriteAllLines(list, new[] { "+Other", (coop ? "+" : "-") + Pins.XrModName, "+" + Pins.SpeedFixName });
         foreach (var mod in new[] { "Other", Pins.XrModName, Pins.SpeedFixName })
+        {
+            if (bundledSpeedFix && mod == Pins.SpeedFixName) continue;
             Directory.CreateDirectory(Path.Combine(gamma, "mods", mod, "gamedata"));
+        }
+        var bundled = Path.Combine(gamma, ".Grok's Modpack Installer", "resources", "Stalker_GAMMA",
+            "G.A.M.M.A", "modpack_addons", Pins.SpeedFixName, "gamedata", "scripts");
+        Directory.CreateDirectory(bundled);
+        File.WriteAllText(Path.Combine(bundled, "speed.script"), "bundled payload");
+        var installedScript = Path.Combine(gamma, "mods", Pins.SpeedFixName, "gamedata", "scripts", "speed.script");
+        if (!bundledSpeedFix)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(installedScript)!);
+            File.WriteAllText(installedScript, "existing user payload");
+        }
         var ini = Path.Combine(gamma, "ModOrganizer.ini");
         if (!missingIni)
             File.WriteAllText(ini, "[General]\r\nselected_profile=wrong\r\n[customExecutables]\r\n1\\binary=some.exe\r\n1\\steamAppID=0\r\n");
         var detected = ExistingStack.Detect(root);
         Assert.NotNull(detected);
-        Assert.True(detected.CoOp);
+        Assert.Equal(coop, detected.CoOp);
         Assert.Equal("", detected.RomeoArchive(""));
         var pipeline = new InstallPipeline(new PipelineCallbacks { Log = _ => {}, Progress = _ => {}, Confirm = _ => false });
         var result = await pipeline.RunAsync(new PipelineRequest { AnomalyPath = anomaly, GammaPath = gamma,
@@ -591,7 +606,9 @@ public class InstallerTests
         }
         else
             Assert.Contains("1\\binary=some.exe", File.ReadAllText(ini));
-        Assert.Equal("+" + Pins.XrModName, File.ReadAllLines(list)[0]);
+        Assert.Equal("+" + (coop ? Pins.XrModName : Pins.SpeedFixName), File.ReadAllLines(list)[0]);
+        Assert.Equal(bundledSpeedFix ? "bundled payload" : "existing user payload", File.ReadAllText(installedScript));
+        Assert.Equal("bundled payload", File.ReadAllText(Path.Combine(bundled, "speed.script")));
         Directory.CreateDirectory(Path.Combine(gamma,"downloads"));
         var retained = Path.Combine(gamma, "downloads", Pins.RomeoArchiveFile);
         File.WriteAllText(retained, "");

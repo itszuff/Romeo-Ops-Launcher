@@ -24,6 +24,7 @@ Version 2.6.1 checks for updates from this repository. If you have 2.6.0 or earl
 
 ### ROMEO fixes and Mod Organizer setup
 
+- **Teepo's Speed Fix.** GAMMA RC3 includes this mod under `.Grok's Modpack Installer\resources\Stalker_GAMMA\G.A.M.M.A\modpack_addons`. The launcher copies it into `GAMMA\mods` if no installed copy exists. A separate download is not needed when the bundled files are present. For an older install stopped by the missing-mod error, update the launcher and choose **Resume Install**, or use **Repair Profile**.
 - **Shader and Atmos cleanup.** When the installer applies or reapplies ROMEO or xrRazom, it deletes the `shaders_cache` directory inside `Anomaly\appdata`. It also searches that same `appdata` tree, including subfolders, and deletes files matching `*atmos*.ltx`. A launcher self-update only updates the launcher executable.
 - **Profile and load order.** The launcher creates or repairs the ASCII-named ROMEO profile, backs up its mod list, selects the profile in MO2 and sets the Steam AppID override to `480` for MO2 custom executables. It sets priority for xrRazom and Teepo's Speed Fix in co-op, or Teepo's Speed Fix alone in solo play, and groups launcher-managed mods under the **Romeo Ops Launcher** separator.
 - **Co-op upgrades.** Applying xrRazom removes known obsolete xrRazom files, backs up the existing xrRazom MO2 mod folder if present, and installs the Slim engine and mod files.
