@@ -67,10 +67,7 @@ public sealed record PipelineRequest
     public bool CreateSnapshots { get; set; } = true;
     public bool PreserveUser { get; set; } = true;
     public bool PreserveMcm { get; set; } = true;
-    public bool VerifyCheckMd5 { get; init; } = true;
-    public bool VerifyForceGit { get; init; }
-    public bool VerifyForceExtract { get; init; }
-    public bool VerifyLargeFiles { get; init; } = true;
+    public int RepairVersion { get; init; }
     public PipelineMode Mode { get; init; }
 }
 

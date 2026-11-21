@@ -24,7 +24,7 @@ Version 2.6.1 checks for updates from this repository. If you have 2.6.0 or earl
 
 ### ROMEO fixes and Mod Organizer setup
 
-- **Teepo's Speed Fix.** GAMMA RC3 includes this mod under `.Grok's Modpack Installer\resources\Stalker_GAMMA\G.A.M.M.A\modpack_addons`. The launcher copies it into `GAMMA\mods` if no installed copy exists. A separate download is not needed when the bundled files are present. For an older install stopped by the missing-mod error, update the launcher and choose **Resume Install**, or use **Repair Profile**.
+- **Teepo's Speed Fix.** GAMMA RC3 includes this mod under `.Grok's Modpack Installer\resources\Stalker_GAMMA\G.A.M.M.A\modpack_addons`. The launcher copies it into `GAMMA\mods` if no installed copy exists. A separate download is not needed when the bundled files are present. For an older install stopped by the missing-mod error, update the launcher and choose **Resume Install**, or use **Verify / Reinstall**.
 - **Shader and Atmos cleanup.** When the installer applies or reapplies ROMEO or xrRazom, it deletes the `shaders_cache` directory inside `Anomaly\appdata`. It also searches that same `appdata` tree, including subfolders, and deletes files matching `*atmos*.ltx`. A launcher self-update only updates the launcher executable.
 - **Profile and load order.** The launcher creates or repairs the ASCII-named ROMEO profile, backs up its mod list, selects the profile in MO2 and sets the Steam AppID override to `480` for MO2 custom executables. It sets priority for xrRazom and Teepo's Speed Fix in co-op, or Teepo's Speed Fix alone in solo play, and groups launcher-managed mods under the **Romeo Ops Launcher** separator.
 - **Co-op upgrades.** Applying xrRazom removes known obsolete xrRazom files, backs up the existing xrRazom MO2 mod folder if present, and installs the Slim engine and mod files.
@@ -41,15 +41,17 @@ The launcher backs up the available files before an install or repair. Leave eit
 
 To reset one group immediately, use its **Reset to Fresh Defaults** button. To recover an earlier setup, choose **Restore from Backup**, pick a dated backup, and select **user.ltx**, **MCM**, or both. Both actions first back up the current settings. Close Anomaly and MO2 before resetting or restoring.
 
-### Scan and repair an installation
+### Repair an installation
 
 **Verify → Purge unused mod files** previews installed folders marked disabled in the MO2 profile you choose. Mods enabled in another profile are protected unless you explicitly include them. Review the names and estimated size before permanent deletion. Reinstall a removed mod to enable it again. Download archives, separator folders and linked folders are preserved.
 
-**Verify → Scan Installation** checks Anomaly 1.5.3 base-file checksums, recognizes supported modded replacements, and checks executables, the ROMEO profile, enabled mod folders and priority. Review the findings before starting a repair.
+**Verify → Verify / Reinstall** runs stalker-gamma-cli's full installation again for Anomaly and GAMMA, with repository downloads and archive extraction enabled. It then reapplies ROMEO and, when co-op is enabled, xrRazom. Finally it refreshes/selects the ROMEO MO2 profile, restores mod priority, and sets Steam AppID `480` for MO2 custom executables.
 
-- **Repair Profile** uses the installed files to repair MO2 configuration when the ROMEO archive is unavailable.
-- **Run Full Repair** uses a selected or retained ROMEO archive to recheck Anomaly, run the selected GAMMA checks and reapply ROMEO, plus xrRazom for co-op installations. Local Anomaly archives are imported only when repair is needed; a local GAMMA archive is imported if Mod Organizer is missing. New verifications start fresh GAMMA checks; resuming the same operation preserves its progress. Final checks run after settings and add-ons are restored and check enabled mod folders and priorities, without hashing every installed mod file.
-- For a full repair, choose whether to **Check MD5** on each GAMMA add-on archive, **Recheck large files**, **Force Git refresh**, **Force extraction**, or **Create per-mod reinstall archives**. Checking every archive can take time and is separate from checking for a launcher update.
+A selected or retained ROMEO `.7z` is required. Verify uses the CLI for the base games regardless of the Install page's local archive settings. This repairs files in place; it does not delete saves or purge unrelated mods.
+
+The only repair options are **Preserve user.ltx (graphics and controls)** and **Preserve MCM options**. Checked options restore the pre-repair settings; unchecked options apply fresh-install defaults. Original settings are backed up and restored if repair fails or is cancelled.
+
+A fresh repair discards old CLI progress. **Resume Verify** continues the current repair. Older Verify checkpoints and interrupted Install checkpoints restart the repair stages while retaining the original settings backup. You can open Verify directly from a failed installation without clearing saved progress.
 
 ### Share and compare co-op setups
 

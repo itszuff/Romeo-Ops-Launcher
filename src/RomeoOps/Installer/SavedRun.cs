@@ -29,6 +29,11 @@ public sealed class SavedRun
     public static SavedRun ForRequest(PipelineRequest request, SavedRun? pending)
     {
         if (pending == null) return new SavedRun { Request = request, RefreshGammaResume = request.Mode == PipelineMode.Verify };
+        if (request.Mode == PipelineMode.Verify &&
+            (pending.Request.Mode != PipelineMode.Verify || pending.Request.RepairVersion != VerifyPlan.CurrentVersion) &&
+            string.Equals(request.AnomalyPath, pending.Request.AnomalyPath, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(request.GammaPath, pending.Request.GammaPath, StringComparison.OrdinalIgnoreCase))
+            return new SavedRun { Request = request, Id = pending.Id, RefreshGammaResume = true };
         if (request == pending.Request) return pending;
         if (request.Mode == PipelineMode.Install && request.InstallCoOp && !pending.Done.Contains("xrRazom files") &&
             request == (pending.Request with { XrArchive = request.XrArchive }))
@@ -39,12 +44,7 @@ public sealed class SavedRun
             throw new PipelineException("Resume the saved operation from its original page.");
 
         // Recheck completed stages under the changed settings, retaining the original player backup.
-        var previous = pending.Request;
-        bool gammaChanged = request.VerifyCheckMd5 != previous.VerifyCheckMd5
-            || request.VerifyForceGit != previous.VerifyForceGit || request.VerifyForceExtract != previous.VerifyForceExtract
-            || request.VerifyLargeFiles != previous.VerifyLargeFiles || request.GammaZip != previous.GammaZip
-            || request.DownloadGamma != previous.DownloadGamma;
-        return new SavedRun { Request = request, Id = pending.Id, RefreshGammaResume = pending.RefreshGammaResume || gammaChanged };
+        return new SavedRun { Request = request, Id = pending.Id, RefreshGammaResume = true };
     }
 
     public static FileStream Lock(InstallLayout layout)

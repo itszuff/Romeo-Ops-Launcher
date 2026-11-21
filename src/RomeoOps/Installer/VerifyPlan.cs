@@ -1,66 +1,29 @@
 namespace RomeoOps.Installer;
 
-public sealed class VerifyPlan
+public static class VerifyPlan
 {
-    public VerifyPlan(bool checkMd5, bool forceGitDownload, bool forceZipExtraction, bool updateLargeFiles)
-    {
-        CheckMd5 = checkMd5;
-        ForceGitDownload = forceGitDownload;
-        ForceZipExtraction = forceZipExtraction;
-        UpdateLargeFiles = updateLargeFiles;
-    }
+    // Increment when an older checkpoint cannot safely resume this repair sequence.
+    public const int CurrentVersion = 1;
 
     public static PipelineRequest FromSettings(AppSettings settings, InstallLayout layout) => new()
     {
         Mode = PipelineMode.Verify,
+        RepairVersion = CurrentVersion,
         AnomalyPath = layout.Anomaly,
         GammaPath = layout.Gamma,
         RomeoArchive = ExistingStack.ResolveRomeoArchive(layout, settings.RomeoArchive),
-        DownloadAnomaly = settings.AnomalySource == "Download",
-        DownloadGamma = settings.GammaSource == "Download",
-        AnomalyZip = settings.AnomalySource == "Local" ? settings.AnomalyZip : null,
-        GammaZip = settings.GammaSource == "Local" ? settings.GammaZip : null,
         InstallCoOp = settings.CoOp,
         XrArchive = settings.CoOp && settings.XrSource == "Local" ? settings.XrArchive : null,
         CreateSnapshots = false,
         PreserveUser = settings.PreserveUser,
-        PreserveMcm = settings.PreserveMcm,
-        VerifyCheckMd5 = settings.VerifyCheckMd5,
-        VerifyForceGit = settings.VerifyForceGit,
-        VerifyForceExtract = settings.VerifyForceExtract,
-        VerifyLargeFiles = settings.VerifyLargeFiles
+        PreserveMcm = settings.PreserveMcm
     };
 
-    public bool CheckMd5 { get; }
-    public bool ForceGitDownload { get; }
-    public bool ForceZipExtraction { get; }
-    public bool UpdateLargeFiles { get; }
-
-    public bool RunsInstaller => CheckMd5 || ForceGitDownload || ForceZipExtraction || UpdateLargeFiles;
-
-    public List<string> FullInstallArgs()
+    public static List<string> FullInstallArgs(bool resume)
     {
-        var args = new List<string> { "full-install", "--enable-long-paths", "--json" };
-        if (!ForceGitDownload)
-            args.Add("--skip-github-downloads");
-        if (!ForceZipExtraction)
-            args.Add("--skip-extract-on-hash-match");
+        var args = new List<string> { "full-install", "--use-anomaly-mirror", "--enable-long-paths", "--json" };
+        if (resume) args.Add("--resume");
         return args;
-    }
-
-    public List<string> ReposToSkip()
-    {
-        var skip = new List<string>();
-        if (!ForceGitDownload)
-        {
-            skip.Add("gamma_setup | ");
-            skip.Add("Stalker_GAMMA | ");
-            skip.Add("teivaz_anomaly_gunslinger | ");
-        }
-
-        if (!UpdateLargeFiles)
-            skip.Add("gamma_large_files_v2 | ");
-        return skip;
     }
 }
 
@@ -93,50 +56,15 @@ public static class GammaResume
 
 public static class VerifyResume
 {
-    public static bool Prepare(string gammaDir, IReadOnlyList<string> skipKeys, bool fresh = false)
+    public static bool Prepare(string gammaDir, bool fresh)
     {
-        Directory.CreateDirectory(gammaDir);
         var path = Path.Combine(gammaDir, "resume.txt");
-        if (skipKeys.Count == 0 && !fresh)
-            return File.Exists(path) && ReadCommand(path) == "full-install";
-
-        var statuses = new Dictionary<string, string>(StringComparer.Ordinal);
-        if (!fresh && File.Exists(path) && ReadCommand(path) == "full-install")
+        if (fresh)
         {
-            foreach (var line in File.ReadAllLines(path))
-            {
-                if (line.Length == 0 || line[0] == '#')
-                    continue;
-                var split = line.Split('\t', 2);
-                if (split.Length == 2)
-                    statuses[split[1]] = split[0];
-            }
+            // Only the CLI owns per-mod progress. Never synthesize completed records.
+            File.Delete(path);
+            return false;
         }
-
-        foreach (var key in skipKeys)
-            statuses[key] = "Complete";
-
-        var lines = new List<string>
-        {
-            "# stalker-gamma resume file. Run the same command with --resume to continue.",
-            "# command: full-install",
-            "# status\trecord"
-        };
-        foreach (var pair in statuses.OrderBy(pair => pair.Key, StringComparer.Ordinal))
-            lines.Add(pair.Value + "\t" + pair.Key);
-        File.WriteAllLines(path, lines);
-        return true;
-    }
-
-    private static string? ReadCommand(string path)
-    {
-        foreach (var line in File.ReadLines(path))
-        {
-            const string prefix = "# command: ";
-            if (line.StartsWith(prefix, StringComparison.Ordinal))
-                return line[prefix.Length..].Trim();
-        }
-
-        return null;
+        return File.Exists(path) && File.ReadLines(path).Any(line => line.Trim() == "# command: full-install");
     }
 }

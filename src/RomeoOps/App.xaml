@@ -40,21 +40,6 @@
  <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="surface" Property="Opacity" Value="0.82"/></Trigger><Trigger Property="IsPressed" Value="True"><Setter TargetName="surface" Property="Opacity" Value="0.65"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="surface" Property="Opacity" Value="0.62"/></Trigger></ControlTemplate.Triggers>
  </ControlTemplate></Setter.Value></Setter>
 </Style>
-<Style x:Key="VerifyOptionsToggle" TargetType="ToggleButton">
-    <Setter Property="Foreground" Value="#202020"/>
-    <Setter Property="Cursor" Value="Hand"/>
-    <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusCue}"/>
-    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToggleButton">
-        <Border x:Name="surface" Background="White" BorderBrush="#202020" BorderThickness="1" CornerRadius="4">
-            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-        </Border>
-        <ControlTemplate.Triggers>
-            <Trigger Property="IsChecked" Value="True"><Setter TargetName="surface" Property="Background" Value="#EEEEEE"/></Trigger>
-            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="surface" Property="Background" Value="#E5E5E5"/></Trigger>
-            <Trigger Property="IsPressed" Value="True"><Setter TargetName="surface" Property="Opacity" Value="0.65"/></Trigger>
-        </ControlTemplate.Triggers>
-    </ControlTemplate></Setter.Value></Setter>
-</Style>
 <Style x:Key="VerifyOptionCheckBox" TargetType="CheckBox">
     <Setter Property="Cursor" Value="Hand"/>
     <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusCue}"/>

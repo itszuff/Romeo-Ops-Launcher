@@ -1,3 +1,10 @@
+## 2.9.7 — 2026-11-21
+
+- Replace selective Verify checks and profile-only repair with one CLI reinstall of Anomaly/GAMMA followed by ROMEO/xrRazom and MO2 configuration (Steam AppID 480).
+- Reduce Verify options to preserving user.ltx and MCM settings or restoring fresh defaults.
+- Migrate older repair checkpoints and allow interrupted installs to enter Verify without discarding player-settings backups.
+- Restore original settings when final validation fails as well as when installation fails or is cancelled.
+
 # Changelog
 
 ## 2.9.6 (2026-11-20)

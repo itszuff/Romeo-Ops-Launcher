@@ -27,7 +27,6 @@ public partial class MainWindow : Window
     private TextBlock? statusView;
     private ProgressBar? meter;
     private bool closing;
-    private bool verifyOptionsExpanded;
 
     public MainWindow()
     {
@@ -438,7 +437,7 @@ public partial class MainWindow : Window
         var existing=RepairTarget();
         var pending=Pending();
         bool resume=pending?.Request.Mode==(verify ? PipelineMode.Verify : PipelineMode.Install);
-        if(operation==null && pending!=null && !resume)
+        if(operation==null && pending!=null && !resume && !verify)
         {
             string target=pending.Request.Mode.ToString();
             Label(0,95,530,55,"A "+target.ToLowerInvariant()+" is in progress for this folder.",20);
@@ -448,44 +447,30 @@ public partial class MainWindow : Window
         if (!verify && !resume && operation==null && existing!=null)
         {
             Label(0,95,530,55,"An installation already exists in this folder.",20);
-            Info(194,171,"Verify and fix","Scan the existing installation and review the findings before choosing a repair.");
+            Info(194,171,"Verify and fix","Reinstall Anomaly and GAMMA, then reapply ROMEO and xrRazom.");
             Action(Page,0,164,190,36,"OPEN VERIFY / FIX",()=>Show("Verify"));
             return;
         }
         var problems=verify ? new List<string>() : SetupGate.Validate(settings);
-        if (verify && existing==null && !resume) problems.Add("Choose the folder containing the installed Anomaly and GAMMA games and a ROMEO profile in Settings.");
-        string archive=verify ? existing?.RomeoArchive(settings.RomeoArchive) ?? "" : settings.RomeoArchive;
+        if (verify && existing==null && pending==null) problems.Add("Choose the folder containing the installed Anomaly and GAMMA games and a ROMEO profile in Settings.");
+        var repairLayout = existing?.Layout ?? (pending == null ? null : InstallLayout.Create(pending.Request.AnomalyPath, pending.Request.GammaPath));
+        string archive = verify && repairLayout != null ? ExistingStack.ResolveRomeoArchive(repairLayout, settings.RomeoArchive) : settings.RomeoArchive;
 
         if (resume) problems.Clear();
         if (verify && archive.Length > 0 && settings.CoOp && settings.XrSource == "Local" && !File.Exists(settings.XrArchive))
             problems.Add("Choose the xrRazom ZIP in Settings, or switch xrRazom to Download.");
-        bool fullRepair=verify && archive.Length>0;
+        if (verify && archive.Length == 0) problems.Add("Select the ROMEO .7z in Settings before repairing.");
         string sources=$"Anomaly   {settings.AnomalySource}     /     GAMMA   {settings.GammaSource}     /     xrRazom   {(settings.CoOp ? settings.XrSource : "Disabled")}";
-        Label(0,86,530,25,verify ? existing?.Layout.Root ?? "Installation directory" : sources,16,true);
-        Label(0,115,530,46,verify && !fullRepair ? "Check installed files and fix the MO2 profile. Select a ROMEO .7z in Settings to also restore game and mod files." : archive.Length==0 ? "Choose the ROMEO archive in Settings." : archive,15);
+        var directoryLabel = Label(0,86,530,25,verify ? repairLayout?.Root ?? "Installation directory" : sources,16,true);
+        directoryLabel.TextWrapping = TextWrapping.NoWrap;
+        directoryLabel.TextTrimming = TextTrimming.CharacterEllipsis;
+        directoryLabel.ToolTip = directoryLabel.Text;
+        Label(0,115,530,46,verify ? "Reinstall Anomaly and GAMMA, then reapply ROMEO, xrRazom (if enabled), and the MO2 profile. Downloads may be required." : archive.Length==0 ? "Choose the ROMEO archive in Settings." : archive,15);
         int row = 160;
-        if (verify && operation != null) verifyOptionsExpanded = false;
-        if (verify && operation == null)
-        {
-            var toggle = new System.Windows.Controls.Primitives.ToggleButton
-            {
-                Content = verifyOptionsExpanded ? "-  HIDE VERIFY OPTIONS" : "+  VERIFY OPTIONS",
-                Style = (Style)FindResource("VerifyOptionsToggle"),
-                IsChecked = verifyOptionsExpanded, FontFamily = ActionFont, FontSize = 16
-            };
-            Put(Page, toggle, 0, row, 178, 30);
-            toggle.Click += (_, _) =>
-            {
-                verifyOptionsExpanded = toggle.IsChecked == true;
-                Show("Verify");
-                Keyboard.Focus(Page.Children.OfType<System.Windows.Controls.Primitives.ToggleButton>().First());
-            };
-            row += 35;
-            if (verifyOptionsExpanded) row += ShowVerifyOptions(fullRepair, row) + 8;
-        }
-        if(operation!=null) Action(Page,0,row,130,35,scanning ? "CANCEL SCAN":"STOP AND SAVE",()=>operation?.Cancel());
+        if (verify && operation == null) row += ShowVerifyOptions(row) + 12;
+        if(operation!=null) Action(Page,0,row,130,35,"STOP AND SAVE",()=>operation?.Cancel());
         else if(problems.Count>0) Action(Page,0,row,130,35,"OPEN SETTINGS",()=>Show("Settings"));
-        else Action(Page,0,row,168,35,resume ? "RESUME "+pending!.Request.Mode.ToString().ToUpperInvariant() : verify ? "SCAN INSTALLATION" : "START INSTALLATION",()=>{if(verify && !resume) Scan(existing!); else Run(verify);});
+        else Action(Page,0,row,168,35,resume ? "RESUME "+pending!.Request.Mode.ToString().ToUpperInvariant() : verify ? "VERIFY / REINSTALL" : "START INSTALLATION",()=>Run(verify));
         if (verify && existing != null && pending == null && operation == null)
         {
             const string help = "Preview disabled mod folders and the space you could reclaim. Mods enabled in another profile are excluded by default. Choose Permanently Delete to remove the folders listed in the preview.";
@@ -516,9 +501,9 @@ public partial class MainWindow : Window
         if (resume && operation==null)
             Info(377,row+7,"Saved progress",verify ? "Resume uses your current settings. Changing them restarts the repair checks and keeps the original player-settings backup." : "Resume continues from the saved checkpoint. Clear Saved Progress discards that checkpoint and keeps installed files and player-settings backups.");
         else if (operation!=null)
-            Info(135,row+7,scanning ? "Cancel scan" : "Stop and save",scanning ? "Stop reading the installation files." : "Stop this run and keep its checkpoint so you can resume later.");
+            Info(135,row+7,"Stop and save", "Stop this run and keep its checkpoint so you can resume later.");
         else if (problems.Count==0)
-            Info(173,row+7,verify ? "Scan installation" : "Start installation",verify ? "Scan reads your installation and shows a repair plan. Select a ROMEO archive in Settings to enable full repair and the GAMMA options above." : "Begin installing into the selected directory with the sources shown above. You can stop the run and resume from its checkpoint.");
+            Info(173,row+7,verify ? "Verify / reinstall" : "Start installation",verify ? "Repair reinstalls Anomaly and GAMMA, reapplies ROMEO and xrRazom, and configures the MO2 profile." : "Begin installing into the selected directory with the sources shown above. You can stop the run and resume from its checkpoint.");
         string message=problems.Count>0 ? string.Join(" ",problems) : resume && operation==null ? status+"  Saved steps: "+(pending!.Done.Count==0 ? "starting stage" : string.Join(", ",pending.Done)) : status;
         statusView=Label(0,row+42,528,58,message,16);
         double meterY = row + 108;
@@ -534,103 +519,28 @@ public partial class MainWindow : Window
         if (verify && operation == null) journalHeight = Math.Min(120, journalHeight);
         Put(Page,journal,0,meterY+10,530,journalHeight);
         if (verify && operation == null && journal.Text.Length == 0)
-            Label(12,meterY+20,500,25,"Scan activity will appear here.",15).Foreground = Brushes.DimGray;
+            Label(12,meterY+20,500,25,"Repair activity will appear here.",15).Foreground = Brushes.DimGray;
     }
-    private int ShowVerifyOptions(bool fullRepair, int top)
+    private int ShowVerifyOptions(int top)
     {
         var options = new StackPanel();
-        const int height = 310;
+        const int height = 120;
         Put(Page, new Border { Child = options, Background = BrushesFrom("#F6F6F6"),
-            BorderBrush = BrushesFrom("#DDDDDD"), BorderThickness = new Thickness(1),
-            Padding = new Thickness(12, 8, 12, 8), CornerRadius = new CornerRadius(4) }, 0, top, 530, height);
-        var components = new Grid { Margin = new Thickness(0, 0, 0, 8) };
-        components.ColumnDefinitions.Add(new ColumnDefinition());
-        components.ColumnDefinitions.Add(new ColumnDefinition());
-        options.Children.Add(components);
-
-        void ComponentSection(int column, string title, string summary, string linkText, string page)
-        {
-            var section = new StackPanel { Margin = new Thickness(0, 0, 12, 0) };
-            Grid.SetColumn(section, column);
-            components.Children.Add(section);
-            section.Children.Add(new TextBlock { Text = title, FontFamily = ActionFont, FontSize = 16, Foreground = Red });
-            var body = new TextBlock { FontFamily = Condensed, FontSize = 15, Foreground = Ink, TextWrapping = TextWrapping.Wrap };
-            body.Inlines.Add(summary);
-            body.Inlines.Add(new System.Windows.Documents.LineBreak());
-            var link = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run(linkText)) { Foreground = Ink };
-            link.Click += (_, _) => Show(page);
-            body.Inlines.Add(link);
-            section.Children.Add(body);
-        }
-
-        string xrSummary = !settings.CoOp ? "Disabled in Settings. Full repair disables co-op in the profile."
-            : settings.XrSource == "Local" ? "Local ZIP selected. Scan checks co-op files and profile. Full repair uses your ZIP."
-            : "Download selected. Scan checks co-op files and profile. Full repair gets the ZIP if needed.";
-        ComponentSection(0, "xrRazom", xrSummary, "Change source", "Settings");
-        ComponentSection(1, "Co-op add-ons", "Scan flags missing folders for enabled mods. Install or update MeeMaster mods on the Add-ons page.",
-            "Open Add-ons", "Add-ons");
-
-        options.Children.Add(new TextBlock
-        {
-            Text = "Options apply when you choose Run Full Repair.",
-            FontFamily = Condensed, FontSize = 15, Foreground = Ink
-        });
-
-        var groups = new Grid { Margin = new Thickness(0, 7, 0, 0) };
-        groups.ColumnDefinitions.Add(new ColumnDefinition());
-        groups.ColumnDefinitions.Add(new ColumnDefinition());
-        options.Children.Add(groups);
-        var repair = new StackPanel();
-        var refresh = new StackPanel { Margin = new Thickness(8, 0, 0, 0) };
-        Grid.SetColumn(refresh, 1);
-        groups.Children.Add(repair);
-        groups.Children.Add(refresh);
-
-        void Group(StackPanel host, string title)
-        {
-            host.Children.Add(new TextBlock { Text = title, FontFamily = ActionFont,
-                FontSize = 16, Foreground = Red, Margin = new Thickness(0, 0, 0, 4) });
-        }
-
-        void Option(StackPanel host, string name, string use, bool selected, Action<bool> change, bool requiresFullRepair = true)
-        {
-            var check = new CheckBox
-            {
-                Content = name, FontFamily = ActionFont, FontSize = 15,
-                Foreground = Ink, IsChecked = selected, IsEnabled = !requiresFullRepair || fullRepair,
-                Style = (Style)FindResource("VerifyOptionCheckBox"), MinHeight = 25,
-                ToolTip = new TextBlock { Text = use, MaxWidth = 285, TextWrapping = TextWrapping.Wrap }
-            };
-            AutomationProperties.SetName(check, name);
-            AutomationProperties.SetHelpText(check, use);
-            ToolTipService.SetShowsToolTipOnKeyboardFocus(check, true);
-            ToolTipService.SetShowOnDisabled(check, true);
-            check.Click += (_, _) => { change(check.IsChecked == true); Save(); };
-            host.Children.Add(check);
-        }
-
-        Group(repair, "Repair GAMMA files");
-        Option(repair, "Check archive hashes (MD5)", "Use if a GAMMA add-on download may be corrupt.",
-            settings.VerifyCheckMd5, v => settings.VerifyCheckMd5 = v);
-        Option(repair, "Extract archives again", "Use if installed mod files are missing or were edited.",
-            settings.VerifyForceExtract, v => settings.VerifyForceExtract = v);
-        Group(refresh, "Refresh GAMMA downloads");
-        Option(refresh, "Refresh GitHub files", "Use if GitHub add-ons or setup repositories are out of date.",
-            settings.VerifyForceGit, v => settings.VerifyForceGit = v);
-        Option(refresh, "Refresh large files", "Use if the GAMMA large-files download was interrupted or is stale.",
-            settings.VerifyLargeFiles, v => settings.VerifyLargeFiles = v);
-        Group(options, "ROMEO archive checks");
-        Option(options, "Check ROMEO archive", "Compare the retained ROMEO .7z SHA-256 with the reference recorded after install or repair.",
-            settings.VerifyRomeoArchive, v => settings.VerifyRomeoArchive = v, requiresFullRepair: false);
-        Option(options, "Check xrRazom archive", "When co-op is enabled, check its recorded SHA-256 and official archive MD5.",
-            settings.VerifyXrArchive, v => settings.VerifyXrArchive = v, requiresFullRepair: false);
-        options.Children.Add(new TextBlock { Text = fullRepair
-            ? "Hover or focus an option for details."
-            : "Select a ROMEO archive in Settings to enable repair options.",
-            FontFamily = Condensed, FontSize = 14, Foreground = Brushes.DimGray,
-            Margin = new Thickness(0, 5, 0, 0) });
-
+            Padding = new Thickness(12, 8, 12, 8) }, 0, top, 530, height);
+        options.Children.Add(new TextBlock { Text = "Player settings", FontFamily = ActionFont, FontSize = 18, Foreground = Red });
+        Add("Preserve user.ltx (graphics and controls)", settings.PreserveUser, value => settings.PreserveUser = value);
+        Add("Preserve MCM options", settings.PreserveMcm, value => settings.PreserveMcm = value);
+        options.Children.Add(new TextBlock { Text = "Unchecked options use fresh-install defaults. Existing settings are backed up.",
+            FontFamily = Condensed, FontSize = 15, TextWrapping = TextWrapping.Wrap, Foreground = Ink });
         return height;
+
+        void Add(string label, bool selected, Action<bool> change)
+        {
+            var check = new CheckBox { Content = label, IsChecked = selected, FontFamily = ActionFont,
+                FontSize = 15, MinHeight = 25, Style = (Style)FindResource("VerifyOptionCheckBox") };
+            check.Click += (_, _) => { change(check.IsChecked == true); Save(); };
+            options.Children.Add(check);
+        }
     }
 
     private async void Run(bool verify)
@@ -649,8 +559,7 @@ public partial class MainWindow : Window
             GammaZip=settings.GammaSource=="Local" ? settings.GammaZip:null,
             XrArchive=settings.CoOp && settings.XrSource=="Local" ? settings.XrArchive:null,
             InstallCoOp=settings.CoOp, DownloadGamma=settings.GammaSource=="Download", DownloadAnomaly=settings.AnomalySource=="Download",
-            CreateSnapshots=settings.CreateSnapshots,PreserveUser=settings.PreserveUser,PreserveMcm=settings.PreserveMcm,
-            VerifyCheckMd5=settings.VerifyCheckMd5,VerifyLargeFiles=settings.VerifyLargeFiles,VerifyForceExtract=settings.VerifyForceExtract,VerifyForceGit=settings.VerifyForceGit };
+            CreateSnapshots=settings.CreateSnapshots,PreserveUser=settings.PreserveUser,PreserveMcm=settings.PreserveMcm };
         var engine=new InstallPipeline(new PipelineCallbacks {
             PickXrArchive=()=>PickBrowserDownload("xrRazom 1.5 Slim", Pins.XrReferer),
             Log=line=>journal.Add(line.Display),
@@ -690,7 +599,7 @@ public partial class MainWindow : Window
         if(operation!=null)
         {
             e.Cancel=true;
-            if(!closing && MessageBox.Show(this,current=="Add-ons" ? "Cancel the add-on update and exit?" : scanning ? "Stop scanning and exit?" : "Save progress, stop the current operation and exit?","ROMEO OPS",MessageBoxButton.YesNo)==MessageBoxResult.Yes)
+            if(!closing && MessageBox.Show(this,current=="Add-ons" ? "Cancel the add-on update and exit?" : "Save progress, stop the current operation and exit?","ROMEO OPS",MessageBoxButton.YesNo)==MessageBoxResult.Yes)
             {closing=true; operation.Cancel();}
         }
         else Save();

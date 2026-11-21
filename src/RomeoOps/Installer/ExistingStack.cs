@@ -34,7 +34,9 @@ public sealed record ExistingStack(InstallLayout Layout, string Profile, bool Co
                 var usual = Path.Combine(root, preferred);
                 if (File.Exists(Path.Combine(usual, marker))) return usual;
                 var matches = children.Where(d => File.Exists(Path.Combine(d, marker))).Take(2).ToArray();
-                return matches.Length == 1 ? matches[0] : null;
+                if (matches.Length == 1) return matches[0];
+                // Repair must remain available when a component executable was deleted.
+                return allowIncomplete && matches.Length == 0 && Directory.Exists(usual) ? usual : null;
             }
             var anomaly = Component("Anomaly", "AnomalyLauncher.exe");
             var gamma = Component("GAMMA", "ModOrganizer.exe");

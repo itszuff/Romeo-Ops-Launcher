@@ -1,9 +1,6 @@
-using System.Text.Json;
-using System.Text.RegularExpressions;
-
 namespace RomeoOps.Installer;
 
-public sealed class AnomalyCheck
+public static class ModdedAnomaly
 {
     // Stock 1.5.3 fsgame.ltx plus the MCM log directory mapping.
     private const string McmConfig = "5750e35aac2a9ad43235c792a047e7542ccd03c8d94ee1566398205af7b83eb1";
@@ -19,36 +16,6 @@ public sealed class AnomalyCheck
         [@"bin\AnomalyDX9.exe"] = ("c3c728a80c395af8221f11775094e22ad8f4a48782c1958811bef3c1d62cab92", "56bf3a69c9d69e0a8a22a89c1ac46ab45ccaa0810f473dccfaf99d8578bc7c71"),
         [@"bin\AnomalyDX9AVX.exe"] = ("fd12fb9a18ce156839af75ae2419114800ad52d6e47336d5edcb725732f2b522", "6bfc5f85c29b9775845d8835c75c55fa6611fd06cddb6b6cacb1180a65306921"),
     };
-
-    private readonly Dictionary<string, string> files = new(StringComparer.OrdinalIgnoreCase);
-    private int total;
-    public string Error { get; private set; } = "";
-    public IEnumerable<KeyValuePair<string, string>> Differences => files.Where(f => f.Value != "Ok");
-
-    public void Observe(string line)
-    {
-        if (!line.StartsWith('{')) return;
-        using var doc = JsonDocument.Parse(line);
-        var root = doc.RootElement;
-        if (!root.TryGetProperty("type", out var type)) return;
-        switch (type.GetString())
-        {
-            case "checksum":
-                total = root.GetProperty("total").GetInt32();
-                files[root.GetProperty("path").GetString()!] = root.GetProperty("status").GetString()!;
-                break;
-            case "result" when root.TryGetProperty("error", out var error):
-                Error = error.GetString() ?? "";
-                break;
-        }
-    }
-
-    public bool IsCompletedMismatch(int exitCode)
-    {
-        var match = Regex.Match(Error, @"^(\d+) file\(s\) corrupt or missing\.?$", RegexOptions.IgnoreCase);
-        return exitCode == 1 && total > 0 && files.Count == total && match.Success
-            && int.TryParse(match.Groups[1].Value, out var count) && count > 0 && count == Differences.Count();
-    }
 
     public static bool KnownOverlay(string anomaly, string path, bool coop)
     {

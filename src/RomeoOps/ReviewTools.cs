@@ -8,7 +8,6 @@ namespace RomeoOps;
 
 public partial class MainWindow
 {
-    private bool scanning;
     private Window ToolWindow(string title, StackPanel body)
     {
         var area = SystemParameters.WorkArea;
@@ -66,65 +65,6 @@ public partial class MainWindow
         buttons.Children.Add(DialogButton("CLOSE",()=>dialog.DialogResult=false));
         if(approve!=null) buttons.Children.Add(DialogButton(approve,()=>dialog.DialogResult=true));
         return dialog.ShowDialog()==true;
-    }
-
-    private async void Scan(ExistingStack stack)
-    {
-        if(operation!=null) return;
-        using var stop=new CancellationTokenSource();
-        operation=stop; scanning=true; percent=0; status="Reading installation files…"; journal=new RunJournal(); Show("Verify");
-        string? findings=null;
-        try
-        {
-            findings=await Task.Run(()=>InstallationScan.Inspect(stack with { CoOp = settings.CoOp },stop.Token,(value,file)=>Dispatcher.Invoke(()=>
-            {
-                percent=value;
-                if(meter!=null) meter.Value=value;
-                if(statusView!=null) statusView.Text=$"Scanning {value}%   {file}";
-            })));
-            var archiveFindings = new List<string>();
-            if (settings.VerifyRomeoArchive)
-                archiveFindings.Add(ArchiveReference.Check(stack.Layout.State, "romeo", stack.RomeoArchive(settings.RomeoArchive)));
-            if (settings.CoOp && settings.VerifyXrArchive)
-            {
-                var xrArchive = File.Exists(settings.XrArchive) ? settings.XrArchive
-                    : Path.Combine(stack.Layout.Gamma, "downloads", Pins.XrFileName);
-                archiveFindings.Add(ArchiveReference.Check(stack.Layout.State, "xrrazom", xrArchive));
-                try { FileHasher.AssertMatch(xrArchive, "MD5", Pins.XrMd5); }
-                catch (Exception ex) when (ex is IOException or InvalidDataException)
-                { archiveFindings.Add("xrRazom: official ZIP check failed. " + ex.Message); }
-            }
-            if (archiveFindings.Count > 0)
-                findings = string.Join(Environment.NewLine, archiveFindings) + Environment.NewLine + findings;
-            journal.Add(findings);
-            percent=100; status="Scan complete.";
-        }
-        catch(OperationCanceledException){status="Scan cancelled.";}
-        catch(Exception ex){status="Scan incomplete. "+ex.Message;}
-        finally { operation=null; scanning=false; }
-        if(closing){Close();return;}
-        Show("Verify");
-        if(findings==null) return;
-        bool full=stack.RomeoArchive(settings.RomeoArchive).Length>0;
-        bool possible=full || (File.Exists(stack.Profile) && settings.CoOp == stack.CoOp);
-        string scope = full ? "Full repair rechecks Anomaly, applies the selected GAMMA checks, reapplies ROMEO and repairs the MO2 profile."
-            : "Profile repair checks installed folders and repairs MO2 configuration. Restoring payload files requires the ROMEO archive.";
-        if (full)
-        {
-            if (settings.AnomalySource == "Local") scope += " The selected local Anomaly archive will be imported.";
-            if (settings.GammaSource == "Local") scope += " The selected local GAMMA archive will be imported.";
-            scope += !settings.CoOp ? " xrRazom will be disabled in the profile."
-                : settings.XrSource == "Local" ? " xrRazom will be installed from the selected ZIP."
-                : " The launcher will download xrRazom if its archive is missing.";
-        }
-        if (!full && settings.CoOp != stack.CoOp)
-            scope = "Select the ROMEO .7z in Settings to apply the xrRazom change with a full repair.";
-        if(full && !settings.VerifyCheckMd5 && !settings.VerifyForceGit && !settings.VerifyForceExtract && !settings.VerifyLargeFiles)
-            scope+=" GAMMA addon checks are off.";
-        if(full && settings.CreateSnapshots) scope+=" Missing per-mod reinstall archives will be created.";
-        var review=findings+"\n\n"+scope+" The scan checks Anomaly base checksums, recognized overlays, profile structure, and the ROMEO / xrRazom source archives. GAMMA add-on archive and Git checks run through stalker-gamma-cli during full repair.";
-        if(Review("Verify • findings and repair plan",review,possible ? (full?"RUN FULL REPAIR":"REPAIR PROFILE"):null))
-            Run(true);
     }
 
     private async void ShareSetup(ExistingStack stack,bool compare)

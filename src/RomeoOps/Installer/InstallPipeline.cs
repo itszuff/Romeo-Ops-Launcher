@@ -27,7 +27,6 @@ public sealed class InstallPipeline
     private ArchiveRetentionSession _retention = new();
     private long _lastDetailTick;
     private string[] _anomalyArgs = { "anomaly-install", "--use-anomaly-mirror", "--json" };
-    private string[] _anomalyCheckArgs = { "anomaly", "check", "--json" };
 
     public InstallPipeline(PipelineCallbacks callbacks) => _callbacks = callbacks;
 
@@ -46,35 +45,30 @@ public sealed class InstallPipeline
             if (pending == null && request.Mode == PipelineMode.Install && ExistingStack.HasInstallation(layout))
                 throw new PipelineException("An installation already exists here. Use Verify / Fix.");
             EnsureGameIsClosed();
-            if (request.Mode == PipelineMode.Install || !string.IsNullOrEmpty(request.RomeoArchive))
-            {
-                RequireMachine();
-                RequireRomeoArchive(request.RomeoArchive);
-            }
+            RequireMachine();
+            RequireRomeoArchive(request.RomeoArchive);
             var backup = PlayerOptions.Capture(layout,_run.Id);
             _run.Save(layout);
             PipelineResult result;
             try
             {
                 result = await RunCoreAsync(request, cancellationToken).ConfigureAwait(false);
+                if (request.Mode == PipelineMode.Install)
+                    PlayerOptions.RecordFresh(layout,request.InstallCoOp,backup);
+                PlayerOptions.Apply(layout,backup,request.PreserveUser,request.PreserveMcm,true,request.InstallCoOp);
+                CoopAddon.Restore(layout, layout.Modlist, request.InstallCoOp ? null : []);
+                InstallationValidation.Validate(layout, request.InstallCoOp);
+                _run.Finish(layout);
             }
             catch
             {
-                PlayerOptions.Apply(layout,backup,request.PreserveUser,request.PreserveMcm,false);
+                PlayerOptions.Apply(layout,backup,true,true,false);
                 throw;
             }
-            if (request.Mode == PipelineMode.Install)
-                PlayerOptions.RecordFresh(layout,request.InstallCoOp,backup);
-            PlayerOptions.Apply(layout,backup,request.PreserveUser,request.PreserveMcm,true,request.InstallCoOp);
-            CoopAddon.Restore(layout, layout.Modlist, request.InstallCoOp ? null : []);
-            InstallationValidation.Validate(layout, request.InstallCoOp);
-            _run.Finish(layout);
             _log.Success("Final checks passed: executables, enabled mod folders, profile and priority.");
             _log.Info("Player settings and managed add-ons restored. These checks do not hash every installed mod file.");
             Report(100, "");
-            _log.Success(request.Mode == PipelineMode.Verify && string.IsNullOrEmpty(request.RomeoArchive)
-                ? "SUCCESS: Installed profile repaired and final checks completed."
-                : request.InstallCoOp
+            _log.Success(request.InstallCoOp
                 ? "SUCCESS: Anomaly, GAMMA, ROMEO, and xrRazom stages completed."
                 : "SUCCESS: Anomaly, GAMMA, and ROMEO stages completed.");
             _log.Info("Mod Organizer: " + Path.Combine(layout.Gamma, "ModOrganizer.exe"));
@@ -112,9 +106,9 @@ public sealed class InstallPipeline
         cancellationToken.ThrowIfCancellationRequested();
         var layout = InstallLayout.Create(request.AnomalyPath, request.GammaPath);
 
-        bool profileOnly = request.Mode == PipelineMode.Verify && string.IsNullOrEmpty(request.RomeoArchive);
-        if (!profileOnly) { RequireMachine(); RequireRomeoArchive(request.RomeoArchive); }
-        if (!profileOnly && request.InstallCoOp && request.XrArchive != null && !File.Exists(request.XrArchive))
+        RequireMachine();
+        RequireRomeoArchive(request.RomeoArchive);
+        if (request.InstallCoOp && request.XrArchive != null && !File.Exists(request.XrArchive))
             throw new PipelineException("The xrRazom zip was not found. Switch xrRazom to Download, or choose the file again.");
 
         foreach (var dir in new[] { layout.Root, layout.Tools, layout.Staging, layout.Logs, layout.State, layout.Backups, layout.Cache })
@@ -140,17 +134,6 @@ public sealed class InstallPipeline
         _log.Success("Installation directories verified.");
         EnsureGameIsClosed();
 
-        if (profileOnly)
-        {
-            var detected = ExistingStack.Detect(layout.Root, allowIncomplete: true);
-            if (detected != null && detected.CoOp != request.InstallCoOp)
-                throw new PipelineException("Select the ROMEO .7z in Settings for a full repair to apply your xrRazom setting.");
-            _log.Info("Checking the installed stack and repairing MO2 configuration using the files on disk.");
-            await RepairProfileAsync(null, layout, request, cancellationToken).ConfigureAwait(false);
-            _log.Info("MO2 configuration repaired; final checks follow settings restoration.");
-            return new PipelineResult { Success = true };
-        }
-
         using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(20) };
 
         BeginStep("STEP 2 - BOOTSTRAPPING TOOLS", 3, 8);
@@ -165,13 +148,13 @@ public sealed class InstallPipeline
                 {
                     if (request.AnomalyZip != null && !StageRules.AnomalyComplete(layout.State, layout.Anomaly))
                         await ImportGameArchiveAsync(sevenZip,request.AnomalyZip,layout,layout.Anomaly,"AnomalyLauncher.exe",cancellationToken);
-                    await InstallAnomalyAsync(cli.Exe,layout,request.DownloadAnomaly,false,cancellationToken);
+                    await InstallAnomalyAsync(cli.Exe,layout,request.DownloadAnomaly,cancellationToken);
                 },_log.Info,cancellationToken);
                 await _run.Step("GAMMA files",layout,async () =>
                 {
                     if (request.GammaZip != null && !StageRules.GammaComplete(layout.State, layout.Gamma))
                         await ImportGameArchiveAsync(sevenZip,request.GammaZip,layout,layout.Gamma,"ModOrganizer.exe",cancellationToken);
-                    await InstallGammaAsync(cli.Exe,layout,request.DownloadGamma,false,cancellationToken);
+                    await InstallGammaAsync(cli.Exe,layout,request.DownloadGamma,cancellationToken);
                 },_log.Info,cancellationToken);
                 await _run.Step("ROMEO files",layout,() => ApplyRomeoAsync(sevenZip,layout,request.RomeoArchive,false,cancellationToken),_log.Info,cancellationToken);
                 if (request.InstallCoOp)
@@ -180,8 +163,6 @@ public sealed class InstallPipeline
                     _log.Info("Co-op is off. xrRazom will not be installed.");
                 break;
             case PipelineMode.Verify:
-                if (!File.Exists(Path.Combine(layout.Gamma, "ModOrganizer.exe")) && request.GammaZip == null)
-                    throw new PipelineException("GAMMA is not installed. Select a GAMMA archive or run Install before Verify.");
                 await VerifyAsync(cli.Exe, http, sevenZip, layout, request, cancellationToken).ConfigureAwait(false);
                 break;
         }
@@ -337,7 +318,6 @@ public sealed class InstallPipeline
         var help = new StringBuilder();
         await _runner.RunAsync(existing, new[] { "--help" }, cancellationToken, line => help.AppendLine(line), throwOnError: false).ConfigureAwait(false);
         _anomalyArgs = GammaCommands.AnomalyInstallArgs(help.ToString()).Concat(new[] { "--json" }).ToArray();
-        _anomalyCheckArgs = GammaCommands.AnomalyCheckArgs(help.ToString());
         _log.Detail("Anomaly command: " + string.Join(' ', _anomalyArgs));
         return (existing, home);
     }
@@ -389,9 +369,9 @@ public sealed class InstallPipeline
         await RunAsync(cli, new[] { "config", "info" }, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task InstallAnomalyAsync(string cli, InstallLayout layout, bool download, bool force, CancellationToken cancellationToken)
+    private async Task InstallAnomalyAsync(string cli, InstallLayout layout, bool download, CancellationToken cancellationToken)
     {
-        BeginStep(force ? "REPAIRING ANOMALY" : "STEP 3 - INSTALLING ANOMALY", 8, 30);
+        BeginStep("STEP 3 - INSTALLING ANOMALY", 8, 30);
         var launcher = Path.Combine(layout.Anomaly, "AnomalyLauncher.exe");
         if (!download)
         {
@@ -404,7 +384,7 @@ public sealed class InstallPipeline
             return;
         }
 
-        if (!force && StageRules.AnomalyComplete(layout.State, layout.Anomaly))
+        if (StageRules.AnomalyComplete(layout.State, layout.Anomaly))
         {
             _log.Info("Stage 1/4: Anomaly 1.5.3 already completed. Skipping.");
             Report(_rangeEnd);
@@ -420,9 +400,9 @@ public sealed class InstallPipeline
         Report(_rangeEnd);
     }
 
-    private async Task InstallGammaAsync(string cli, InstallLayout layout, bool download, bool force, CancellationToken cancellationToken)
+    private async Task InstallGammaAsync(string cli, InstallLayout layout, bool download, CancellationToken cancellationToken)
     {
-        BeginStep(force ? "REPAIRING GAMMA" : "STEP 4 - INSTALLING GAMMA", 30, 78);
+        BeginStep("STEP 4 - INSTALLING GAMMA", 30, 78);
         var organizer = Path.Combine(layout.Gamma, "ModOrganizer.exe");
         if (!download)
         {
@@ -435,7 +415,7 @@ public sealed class InstallPipeline
             return;
         }
 
-        if (!force && StageRules.GammaComplete(layout.State, layout.Gamma))
+        if (StageRules.GammaComplete(layout.State, layout.Gamma))
         {
             _log.Info("Stage 2/4: GAMMA already completed. Skipping.");
             Report(_rangeEnd);
@@ -482,147 +462,26 @@ public sealed class InstallPipeline
         PipelineRequest request,
         CancellationToken cancellationToken)
     {
-        var plan = new VerifyPlan(request.VerifyCheckMd5, request.VerifyForceGit, request.VerifyForceExtract, request.VerifyLargeFiles);
-        if (!File.Exists(Path.Combine(layout.Gamma, "ModOrganizer.exe")) && request.GammaZip != null)
-            await _run.Step("Local GAMMA files", layout, () => ImportGameArchiveAsync(sevenZip, request.GammaZip, layout, layout.Gamma, "ModOrganizer.exe", cancellationToken), _log.Info, cancellationToken);
-        else
-            _log.Info("Using installed GAMMA files; base archive import skipped.");
-        await _run.Step("Anomaly integrity", layout,
-            () => CheckAnomalyAsync(cli, layout, request.DownloadAnomaly, request.InstallCoOp, cancellationToken,
-                request.AnomalyZip == null ? null : async () =>
-                {
-                    await ImportGameArchiveAsync(sevenZip, request.AnomalyZip, layout, layout.Anomaly, "AnomalyLauncher.exe", cancellationToken);
-                    await CheckAnomalyAsync(cli, layout, false, request.InstallCoOp, cancellationToken);
-                }), _log.Info, cancellationToken).ConfigureAwait(false);
-
-        await _run.Step("GAMMA verification",layout,async () =>
+        await _run.Step("Anomaly and GAMMA repair", layout, async () =>
         {
-        if (plan.RunsInstaller)
-        {
-            BeginStep("VERIFYING GAMMA ADDONS", 30, 70);
-            if (!plan.CheckMd5)
-                _log.Warning("Check MD5 is off. stalker-gamma-cli still hashes an archive before it replaces that file.");
-            else
-                _log.Info("Check MD5 is on. Every addon archive is hashed. A mismatch is downloaded again.");
-            _log.Info(plan.ForceGitDownload
-                ? "Force git download is on. GitHub addon archives are downloaded again."
-                : "Force git download is off. GitHub archives already on disk are kept, and the three setup repositories are left in place.");
-            _log.Info(plan.ForceZipExtraction
-                ? "Force zip extraction is on. Archives are extracted again."
-                : "Force zip extraction is off. An archive whose MD5 matches is not extracted again.");
-            _log.Info(plan.UpdateLargeFiles
-                ? "Update large files is on. gamma_large_files is refreshed."
-                : "Update large files is off. gamma_large_files is left in place.");
-
-            var resume = VerifyResume.Prepare(layout.Gamma, plan.ReposToSkip(), _run.RefreshGammaResume);
-            if (_run.RefreshGammaResume)
-            {
-                _run.RefreshGammaResume = false;
-                _run.Save(layout);
-            }
+            BeginStep("REINSTALLING ANOMALY AND GAMMA", 8, 70);
+            EnsureFreeSpace(layout);
             CloseOwnMo2(layout.Gamma);
-            var args = plan.FullInstallArgs();
-            if (request.DownloadAnomaly)
-                args.Insert(1, "--use-anomaly-mirror");
-            if (resume)
-            {
-                args.Add("--resume");
-                var (done, total) = GammaResume.ReadProgress(layout.Gamma);
-                if (total > 0)
-                {
-                    _cliProgress.Seed(done, total);
-                    ReportChild((int)Math.Round(done / (double)total * 100d), $"Mods {done}/{total} already complete");
-                    _log.Info($"Resuming from GAMMA\\resume.txt ({done}/{total} mods already complete).");
-                }
-                else
-                {
-                    _log.Info("Resuming from GAMMA\\resume.txt.");
-                }
-            }
-
-            await RunAsync(cli, args, cancellationToken).ConfigureAwait(false);
-            _log.Success("GAMMA addon verification finished.");
-        }
-        else
-        {
-            _log.Info("Check MD5, Force git download, Force zip extraction, and Update large files are off. GAMMA addons are not downloaded.");
-        }
-
-        }, _log.Info,cancellationToken).ConfigureAwait(false);
+            var resume = VerifyResume.Prepare(layout.Gamma, _run.RefreshGammaResume);
+            _run.RefreshGammaResume = false;
+            _run.Save(layout);
+            _log.Info("Reinstalling Anomaly and GAMMA with stalker-gamma-cli, including all add-on extraction and repositories.");
+            await RunAsync(cli, VerifyPlan.FullInstallArgs(resume), cancellationToken).ConfigureAwait(false);
+            if (!File.Exists(Path.Combine(layout.Anomaly, "AnomalyLauncher.exe")) ||
+                !File.Exists(Path.Combine(layout.Gamma, "ModOrganizer.exe")))
+                throw new PipelineException("The CLI finished but Anomaly or Mod Organizer is missing. See the repair log.");
+        }, _log.Info, cancellationToken).ConfigureAwait(false);
 
         await _run.Step("ROMEO files",layout,() => ApplyRomeoAsync(sevenZip, layout, request.RomeoArchive, reapply: true, cancellationToken),_log.Info,cancellationToken).ConfigureAwait(false);
         if (request.InstallCoOp)
             await _run.Step("xrRazom files",layout,() => ApplyXrAsync(http, sevenZip, layout, request.XrArchive, reapply: true, cancellationToken),_log.Info,cancellationToken).ConfigureAwait(false);
         else
             _log.Info("Co-op is off. The repaired profile will have xrRazom disabled.");
-    }
-
-    private async Task CheckAnomalyAsync(string cli, InstallLayout layout, bool download, bool coop, CancellationToken cancellationToken, Func<Task>? repairLocal = null)
-    {
-        BeginStep("CHECKING ANOMALY INTEGRITY", 8, 30);
-        var launcher = Path.Combine(layout.Anomaly, "AnomalyLauncher.exe");
-        if (!File.Exists(launcher))
-        {
-            if (repairLocal != null) { await repairLocal().ConfigureAwait(false); return; }
-            if (!download)
-                throw new PipelineException("AnomalyLauncher.exe was not found, and download is turned off. Choose Download on the Settings page, or run Install.");
-            _log.Warning("Anomaly launcher is missing. Installing Anomaly.");
-            await InstallAnomalyAsync(cli, layout, download: true, force: true, cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        _log.Info("Running the stalker-gamma-cli Anomaly integrity check.");
-        var check = new AnomalyCheck();
-        var code = await _runner.RunAsync(cli, _anomalyCheckArgs, cancellationToken, line =>
-        {
-            lock (check)
-            {
-                check.Observe(line);
-                _log.FileOnly(line);
-            }
-        }, throwOnError: false).ConfigureAwait(false);
-
-        if (code == 0)
-        {
-            _log.Success("Anomaly integrity check passed.");
-            Report(_rangeEnd);
-            return;
-        }
-
-        if (!check.IsCompletedMismatch(code))
-            throw new PipelineException("Anomaly integrity check could not complete. " +
-                (check.Error.Length > 0 ? check.Error : $"CLI exit code {code}. See the log for details."));
-
-        var unexpected = new List<string>();
-        foreach (var (path, status) in check.Differences)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var relative = Path.GetRelativePath(layout.Anomaly, path);
-            if (status == "Corrupt" && AnomalyCheck.KnownOverlay(layout.Anomaly, path, coop))
-                _log.Info("Verified modded Anomaly file: " + relative);
-            else
-            {
-                unexpected.Add(relative);
-                _log.Warning($"Anomaly file {status}: {relative}");
-            }
-        }
-
-        if (unexpected.Count == 0)
-        {
-            _log.Success("Anomaly integrity verified against stock and installed mod checksums.");
-            Report(_rangeEnd);
-            return;
-        }
-
-        if (repairLocal != null)
-        {
-            _log.Info("Repairing damaged Anomaly files from the local archive.");
-            await repairLocal().ConfigureAwait(false);
-            return;
-        }
-        if (!download) throw new PipelineException("Base Anomaly repair required: " + string.Join(", ", unexpected));
-        _log.Warning($"Repairing Anomaly after {unexpected.Count} unrecognized or missing file(s).");
-        await InstallAnomalyAsync(cli, layout, download: true, force: true, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task ApplyRomeoAsync(
@@ -824,10 +683,11 @@ public sealed class InstallPipeline
             TryDeleteDirectory(extract);
         }, _log.Info,cancellationToken).ConfigureAwait(false);
 
-        await RepairProfileAsync(cli, layout, request, cancellationToken).ConfigureAwait(false);
+        await RepairProfileAsync(layout, request, cancellationToken).ConfigureAwait(false);
+        await SelectRomeoProfileAsync(cli, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task RepairProfileAsync(string? cli, InstallLayout layout, PipelineRequest request, CancellationToken cancellationToken)
+    private async Task RepairProfileAsync(InstallLayout layout, PipelineRequest request, CancellationToken cancellationToken)
     {
         CloseOwnMo2(layout.Gamma);
         await EnsureRomeoProfileAsync(layout, refresh: false, cancellationToken).ConfigureAwait(false);
@@ -841,7 +701,6 @@ public sealed class InstallPipeline
         ModlistEditor.SetPriorityOrder(layout.Modlist, priority);
         if (Mo2Profile.EnsureConfiguration(layout))
             _log.Info("Created missing ModOrganizer.ini for the selected Anomaly installation.");
-        if (cli != null) await SelectRomeoProfileAsync(cli, cancellationToken).ConfigureAwait(false);
         var ini = Path.Combine(layout.Gamma, "ModOrganizer.ini");
         Mo2Profile.SetSelectedProfile(ini, layout.Backups);
         var executables = Mo2Profile.SetSteamAppId(ini, layout.Backups);
@@ -963,7 +822,7 @@ public sealed class InstallPipeline
         if (!Directory.Exists(data) || !Directory.EnumerateFiles(data, "*", SearchOption.AllDirectories).Any())
             throw new PipelineException("Teepo's Speed Fix is included with GAMMA; a separate download is not normally needed. "
                 + "No installed copy was found at '" + destination + "', and its bundled game files were not found at '" + source
-                + "'. Restore this add-on from your complete GAMMA RC3 package, then Resume Install or Repair Profile.");
+                + "'. Restore this add-on from your complete GAMMA RC3 package, then Resume Install or Verify / Reinstall.");
 
         _log.Info("Installing Teepo's Speed Fix from GAMMA's bundled add-on resources. No separate download is needed.");
         // Publish only a complete copy, so cancellation cannot leave a folder that passes the presence check.

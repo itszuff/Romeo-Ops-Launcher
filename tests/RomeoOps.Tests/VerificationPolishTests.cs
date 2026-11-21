@@ -16,16 +16,16 @@ public sealed class VerificationPolishTests : IDisposable
         Directory.CreateDirectory(layout.State);
         var resume = Path.Combine(layout.Gamma, "resume.txt");
         File.WriteAllText(resume, "# command: full-install\nComplete\told-mod\n");
-        var request = new PipelineRequest { Mode = PipelineMode.Verify, AnomalyPath = layout.Anomaly, GammaPath = layout.Gamma, RomeoArchive = "romeo.7z" };
+        var request = new PipelineRequest { Mode = PipelineMode.Verify, RepairVersion = VerifyPlan.CurrentVersion, AnomalyPath = layout.Anomaly, GammaPath = layout.Gamma, RomeoArchive = "romeo.7z" };
         var run = SavedRun.ForRequest(request, null);
-        VerifyResume.Prepare(layout.Gamma, [], run.RefreshGammaResume);
+        VerifyResume.Prepare(layout.Gamma, run.RefreshGammaResume);
         Assert.Equal((0, 0), GammaResume.ReadProgress(layout.Gamma));
         run.RefreshGammaResume = false;
         run.Save(layout);
-        File.AppendAllText(resume, "Complete\tcurrent-mod\n");
+        File.WriteAllText(resume, "# command: full-install\nComplete\tcurrent-mod\n");
         var continued = SavedRun.ForRequest(request, SavedRun.Read(root));
         Assert.False(continued.RefreshGammaResume);
-        VerifyResume.Prepare(layout.Gamma, [], continued.RefreshGammaResume);
+        VerifyResume.Prepare(layout.Gamma, continued.RefreshGammaResume);
         Assert.Equal((1, 1), GammaResume.ReadProgress(layout.Gamma));
     }
 
@@ -80,27 +80,4 @@ public sealed class VerificationPolishTests : IDisposable
         Assert.Equal(800, lines.Distinct().Count());
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task LocalAnomalyRepairRunsOnlyAfterDetectedDamage(bool damaged)
-    {
-        var layout = InstallLayout.Create(Path.Combine(root, "Anomaly"), Path.Combine(root, "GAMMA"));
-        Directory.CreateDirectory(layout.Anomaly);
-        File.WriteAllText(Path.Combine(layout.Anomaly, "AnomalyLauncher.exe"), "");
-        var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
-        var pipeline = new InstallPipeline(new PipelineCallbacks { Log = _ => {}, Progress = _ => {}, Confirm = _ => false });
-        using var log = new InstallLog(_ => {});
-        typeof(InstallPipeline).GetField("_log", flags)!.SetValue(pipeline, log);
-        var script = damaged
-            ? "Write-Output '{\"type\":\"checksum\",\"path\":\"missing.db\",\"status\":\"Missing\",\"total\":1}'; Write-Output '{\"type\":\"result\",\"error\":\"1 file(s) corrupt or missing\"}'; exit 1"
-            : "exit 0";
-        typeof(InstallPipeline).GetField("_anomalyCheckArgs", flags)!.SetValue(pipeline, new[] { "-NoProfile", "-Command", script });
-        var repaired = false;
-        Func<Task> repair = () => { repaired = true; return Task.CompletedTask; };
-        var powershell = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
-        await (Task)typeof(InstallPipeline).GetMethod("CheckAnomalyAsync", flags)!.Invoke(pipeline,
-            new object[] { powershell, layout, false, false, CancellationToken.None, repair })!;
-        Assert.Equal(damaged, repaired);
-    }
 }

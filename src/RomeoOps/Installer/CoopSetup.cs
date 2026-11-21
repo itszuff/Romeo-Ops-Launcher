@@ -10,7 +10,7 @@ public sealed record CoopSetup(int Format,string XrVersion,string EngineHash,str
     {
         var engine = Path.Combine(stack.Layout.Anomaly,"bin","AnomalyDX11AVX.exe");
         var hash = File.Exists(engine) ? FileHasher.Compute(engine,"SHA256") : "Missing";
-        var known = stack.CoOp && File.Exists(engine) && AnomalyCheck.KnownOverlay(stack.Layout.Anomaly,engine,true);
+        var known = stack.CoOp && File.Exists(engine) && ModdedAnomaly.KnownOverlay(stack.Layout.Anomaly,engine,true);
         var version = !stack.CoOp ? "Disabled" : known ? "1.5 Slim" : "Unrecognized build";
         var enabled = File.ReadLines(stack.Profile).Where(s=>s.Length>1 && s.StartsWith('+')).Select(s=>s[1..]).ToArray();
         var mods = Path.Combine(stack.Layout.Gamma,"mods");

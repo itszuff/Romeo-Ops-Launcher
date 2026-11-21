@@ -61,7 +61,6 @@ public class InstallerTests
         var old = new SavedRun { Request = VerifyPlan.FromSettings(settings, layout), Done = { "xrRazom files" } };
         settings.CoOp = enable;
         settings.XrSource = source;
-        settings.VerifyForceGit = true;
         var request = VerifyPlan.FromSettings(settings, layout);
         var resumed = SavedRun.ForRequest(request, old);
         Assert.Equal(enable, resumed.Request.InstallCoOp);
@@ -73,11 +72,11 @@ public class InstallerTests
     }
 
     [Fact]
-    public void ChangedGammaChecksDropPreviouslySkippedRepositories()
+    public void FreshRepairDropsPreviouslySkippedRepositories()
     {
         var gamma = TempDir();
-        VerifyResume.Prepare(gamma, new[] { "Stalker_GAMMA | " });
-        VerifyResume.Prepare(gamma, Array.Empty<string>(), fresh: true);
+        File.WriteAllText(Path.Combine(gamma, "resume.txt"), "# command: full-install\nComplete\tStalker_GAMMA | ");
+        VerifyResume.Prepare(gamma, fresh: true);
         Assert.Equal((0, 0), GammaResume.ReadProgress(gamma));
     }
 
@@ -305,8 +304,6 @@ public class InstallerTests
     {
         Assert.Equal(new[] { "anomaly", "install", "--use-anomaly-mirror" }, GammaCommands.AnomalyInstallArgs("  anomaly install    Installs Stalker Anomaly."));
         Assert.Equal(new[] { "anomaly-install", "--use-anomaly-mirror" }, GammaCommands.AnomalyInstallArgs("anomaly-install                    Installs Stalker Anomaly."));
-        Assert.Equal(new[] { "anomaly", "check", "--json" }, GammaCommands.AnomalyCheckArgs("anomaly check                      Verifies the integrity of Stalker Anomaly"));
-        Assert.Equal(new[] { "check-anomaly", "--json" }, GammaCommands.AnomalyCheckArgs("check-anomaly                    Verifies the integrity of Stalker Anomaly"));
     }
 
     [Fact]
@@ -368,41 +365,10 @@ public class InstallerTests
     }
 
     [Fact]
-    public void VerifyDefaultsHashAddonsWithoutForcingGitOrExtract()
+    public void RepairAlwaysDownloadsAndExtractsWithoutSkipFlags()
     {
-        var plan = new VerifyPlan(checkMd5: true, forceGitDownload: false, forceZipExtraction: false, updateLargeFiles: true);
-        Assert.Equal(
-            new[] { "full-install", "--enable-long-paths", "--json", "--skip-github-downloads", "--skip-extract-on-hash-match" },
-            plan.FullInstallArgs());
-        Assert.DoesNotContain("gamma_large_files_v2 | ", plan.ReposToSkip());
-        Assert.Contains("gamma_setup | ", plan.ReposToSkip());
-        Assert.Contains("Stalker_GAMMA | ", plan.ReposToSkip());
-        Assert.Contains("teivaz_anomaly_gunslinger | ", plan.ReposToSkip());
-    }
-
-    [Fact]
-    public void ForceOptionsDownloadAndExtractAgain()
-    {
-        var plan = new VerifyPlan(checkMd5: true, forceGitDownload: true, forceZipExtraction: true, updateLargeFiles: false);
-        Assert.DoesNotContain("--skip-github-downloads", plan.FullInstallArgs());
-        Assert.DoesNotContain("--skip-extract-on-hash-match", plan.FullInstallArgs());
-        Assert.Equal(new[] { "gamma_large_files_v2 | " }, plan.ReposToSkip());
-    }
-
-    [Fact]
-    public void SkippedRepositoriesAreMarkedCompleteInResume()
-    {
-        var gamma = TempDir();
-        File.WriteAllLines(Path.Combine(gamma, "resume.txt"), new[]
-        {
-            "# command: full-install",
-            "Extract\tSome Addon | addon.zip"
-        });
-
-        Assert.True(VerifyResume.Prepare(gamma, new[] { "gamma_large_files_v2 | " }));
-        var text = File.ReadAllText(Path.Combine(gamma, "resume.txt"));
-        Assert.Contains("Complete\tgamma_large_files_v2 | ", text);
-        Assert.Contains("Extract\tSome Addon | addon.zip", text);
+        Assert.Equal(new[] { "full-install", "--use-anomaly-mirror", "--enable-long-paths", "--json" }, VerifyPlan.FullInstallArgs(false));
+        Assert.Equal(VerifyPlan.FullInstallArgs(false).Append("--resume"), VerifyPlan.FullInstallArgs(true));
     }
 
     [Fact]
@@ -560,7 +526,7 @@ public class InstallerTests
     [InlineData(true, false, true)]
     [InlineData(true, true, true)]
     [InlineData(true, true, false)]
-    public async Task DetectAndRepairIndependentInstallationWithoutSources(bool missingIni, bool bundledSpeedFix, bool coop)
+    public async Task RepairProfileSelectsRomeoAndSetsSteamIds(bool missingIni, bool bundledSpeedFix, bool coop)
     {
         var root = TempDir();
         var anomaly = Directory.CreateDirectory(Path.Combine(root, "Anomaly 1.5.3")).FullName;
@@ -594,9 +560,14 @@ public class InstallerTests
         Assert.Equal(coop, detected.CoOp);
         Assert.Equal("", detected.RomeoArchive(""));
         var pipeline = new InstallPipeline(new PipelineCallbacks { Log = _ => {}, Progress = _ => {}, Confirm = _ => false });
-        var result = await pipeline.RunAsync(new PipelineRequest { AnomalyPath = anomaly, GammaPath = gamma,
-            RomeoArchive = "", InstallCoOp = detected.CoOp, Mode = PipelineMode.Verify }, CancellationToken.None);
-        Assert.True(result.Success, result.Error);
+        var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        using var log = new InstallLog(_ => {});
+        typeof(InstallPipeline).GetField("_log", flags)!.SetValue(pipeline, log);
+        var request = new PipelineRequest { AnomalyPath = anomaly, GammaPath = gamma,
+            RomeoArchive = "romeo.7z", InstallCoOp = detected.CoOp, Mode = PipelineMode.Verify };
+        await (Task)typeof(InstallPipeline).GetMethod("RepairProfileAsync", flags)!.Invoke(pipeline,
+            new object[] { detected.Layout, request, CancellationToken.None })!;
+        InstallationValidation.Validate(detected.Layout, coop);
         Assert.Contains(Pins.RomeoProfile, File.ReadAllText(ini));
         Assert.Contains("steamAppID=480", File.ReadAllText(ini));
         if (missingIni)
@@ -616,25 +587,12 @@ public class InstallerTests
     }
 
     [Fact]
-    public void IncompleteOrLockedAnomalyCheckNeverRequestsRepair()
-    {
-        var check = new AnomalyCheck();
-        check.Observe("""{"type":"checksum","path":"one","status":"Corrupt","total":2}""");
-        check.Observe("""{"type":"result","error":"1 file(s) corrupt or missing"}""");
-        Assert.False(check.IsCompletedMismatch(1));
-        check.Observe("""{"type":"checksum","path":"two","status":"Ok","total":2}""");
-        Assert.True(check.IsCompletedMismatch(1));
-        check.Observe("""{"type":"result","error":"File in use"}""");
-        Assert.False(check.IsCompletedMismatch(1));
-    }
-
-    [Fact]
     public void AlteredMcmConfigIsNotAcceptedByName()
     {
         var folder = TempDir();
         var config = Path.Combine(folder, "fsgame.ltx");
         File.WriteAllText(config, "bad contents");
-        Assert.False(AnomalyCheck.KnownOverlay(folder, config, true));
+        Assert.False(ModdedAnomaly.KnownOverlay(folder, config, true));
     }
 
     [Fact]
@@ -647,14 +605,14 @@ public class InstallerTests
         var run=new SavedRun {Request=request};
         run.Save(layout);
         int calls=0;
-        await run.Step("Anomaly integrity",layout,()=>{calls++;return Task.CompletedTask;},_=>{},default);
-        await Assert.ThrowsAsync<OperationCanceledException>(()=>run.Step("GAMMA verification",layout,
+        await run.Step("Anomaly and GAMMA repair",layout,()=>{calls++;return Task.CompletedTask;},_=>{},default);
+        await Assert.ThrowsAsync<OperationCanceledException>(()=>run.Step("ROMEO files",layout,
             ()=>throw new OperationCanceledException(),_=>{},default));
         var loaded=SavedRun.Read(root)!;
         Assert.Equal(run.Id,loaded.Id);
-        await loaded.Step("Anomaly integrity",layout,()=>{calls++;return Task.CompletedTask;},_=>{},default);
+        await loaded.Step("Anomaly and GAMMA repair",layout,()=>{calls++;return Task.CompletedTask;},_=>{},default);
         Assert.Equal(1,calls);
-        await loaded.Step("GAMMA verification",layout,()=>{calls++;return Task.CompletedTask;},_=>{},default);
+        await loaded.Step("ROMEO files",layout,()=>{calls++;return Task.CompletedTask;},_=>{},default);
         Assert.Equal(2,calls);
         loaded.Finish(layout);
         Assert.Null(SavedRun.Read(root));
@@ -759,21 +717,6 @@ public class InstallerTests
         Assert.Equal(new[]{"# MO2","+"+Pins.XrModName,"+"+Pins.SpeedFixName,addon,separator,"+Other",old},File.ReadAllLines(layout.Modlist));
     }
 
-    [Fact]
-    public void ReadOnlyScanReportsDamageWithoutTouchingGameFiles()
-    {
-        var root=TempDir();
-        var layout=InstallLayout.Create(Path.Combine(root,"Anomaly"),Path.Combine(root,"GAMMA"));
-        Directory.CreateDirectory(layout.Anomaly);
-        var file=Path.Combine(layout.Anomaly,"fsgame.ltx");
-        File.WriteAllText(file,"damaged");
-        var before=File.GetLastWriteTimeUtc(file);
-        var review=InstallationScan.Inspect(new ExistingStack(layout,layout.Modlist,false),default,(_,_)=>{});
-        Assert.Contains("Checked 85",review);
-        Assert.Contains("Repair unrecognized Anomaly file: fsgame.ltx",review);
-        Assert.Equal(before,File.GetLastWriteTimeUtc(file));
-        Assert.Equal(new[]{file},Directory.GetFiles(root,"*",SearchOption.AllDirectories));
-    }
 
     [Fact]
     public void RestoreOnlySelectedBackupFileAndKeepUndoCopy()

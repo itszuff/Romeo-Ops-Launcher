@@ -21,12 +21,6 @@ public sealed class AppSettings
     public bool CreateSnapshots { get; set; } = true;
     public bool PreserveUser { get; set; } = true;
     public bool PreserveMcm { get; set; } = true;
-    public bool VerifyCheckMd5 { get; set; } = true;
-    public bool VerifyForceGit { get; set; }
-    public bool VerifyForceExtract { get; set; }
-    public bool VerifyLargeFiles { get; set; }
-    public bool VerifyRomeoArchive { get; set; } = true;
-    public bool VerifyXrArchive { get; set; } = true;
 }
 
 public static class SettingsStore
@@ -65,12 +59,6 @@ public static class SettingsStore
             loaded.XrSource = loaded.XrSource == "Local" ? "Local" : "Download";
             if (text.IndexOf("\"coOp\"", StringComparison.OrdinalIgnoreCase) < 0)
                 loaded.CoOp = true;
-            if (text.IndexOf("\"verifyCheckMd5\"", StringComparison.OrdinalIgnoreCase) < 0)
-                loaded.VerifyCheckMd5 = true;
-            if (text.IndexOf("\"verifyRomeoArchive\"", StringComparison.OrdinalIgnoreCase) < 0)
-                loaded.VerifyRomeoArchive = true;
-            if (text.IndexOf("\"verifyXrArchive\"", StringComparison.OrdinalIgnoreCase) < 0)
-                loaded.VerifyXrArchive = true;
             return loaded;
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
@@ -114,12 +102,6 @@ public static class SettingsStore
     {
         InstallFolder = @"C:\StalkerRomeo",
         CoOp = false,
-        VerifyCheckMd5 = true,
-        VerifyLargeFiles = false,
-        VerifyForceGit = false,
-        VerifyForceExtract = false,
-        VerifyRomeoArchive = true,
-        VerifyXrArchive = true
     };
 
     public static void Save(AppSettings settings)
