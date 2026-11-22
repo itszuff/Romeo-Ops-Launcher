@@ -524,13 +524,13 @@ public partial class MainWindow : Window
     private int ShowVerifyOptions(int top)
     {
         var options = new StackPanel();
-        const int height = 120;
+        const int height = 145;
         Put(Page, new Border { Child = options, Background = BrushesFrom("#F6F6F6"),
             Padding = new Thickness(12, 8, 12, 8) }, 0, top, 530, height);
         options.Children.Add(new TextBlock { Text = "Player settings", FontFamily = ActionFont, FontSize = 18, Foreground = Red });
         Add("Preserve user.ltx (graphics and controls)", settings.PreserveUser, value => settings.PreserveUser = value);
         Add("Preserve MCM options", settings.PreserveMcm, value => settings.PreserveMcm = value);
-        options.Children.Add(new TextBlock { Text = "Unchecked options use fresh-install defaults. Existing settings are backed up.",
+        options.Children.Add(new TextBlock { Text = "Unchecked options use fresh-install defaults. Existing settings are backed up. Extra mods are kept automatically; missing extras are listed disabled.",
             FontFamily = Condensed, FontSize = 15, TextWrapping = TextWrapping.Wrap, Foreground = Ink });
         return height;
 

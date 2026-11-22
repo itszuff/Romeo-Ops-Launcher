@@ -47,22 +47,26 @@ public sealed class InstallPipeline
             EnsureGameIsClosed();
             RequireMachine();
             RequireRomeoArchive(request.RomeoArchive);
+            CloseOwnMo2(layout.Gamma);
             var backup = PlayerOptions.Capture(layout,_run.Id);
+            var customMods = request.Mode == PipelineMode.Verify ? CustomMods.Capture(layout, _run.Id) : null;
             _run.Save(layout);
             PipelineResult result;
             try
             {
-                result = await RunCoreAsync(request, cancellationToken).ConfigureAwait(false);
+                result = await RunCoreAsync(request, cancellationToken, customMods).ConfigureAwait(false);
                 if (request.Mode == PipelineMode.Install)
                     PlayerOptions.RecordFresh(layout,request.InstallCoOp,backup);
                 PlayerOptions.Apply(layout,backup,request.PreserveUser,request.PreserveMcm,true,request.InstallCoOp);
                 CoopAddon.Restore(layout, layout.Modlist, request.InstallCoOp ? null : []);
+                if (customMods != null) CustomMods.Restore(layout, customMods, _log.Warning);
                 InstallationValidation.Validate(layout, request.InstallCoOp);
                 _run.Finish(layout);
             }
             catch
             {
                 PlayerOptions.Apply(layout,backup,true,true,false);
+                if (customMods != null) _log.Warning("Original custom mod list retained at: " + customMods);
                 throw;
             }
             _log.Success("Final checks passed: executables, enabled mod folders, profile and priority.");
@@ -101,7 +105,7 @@ public sealed class InstallPipeline
         }
     }
 
-    private async Task<PipelineResult> RunCoreAsync(PipelineRequest request, CancellationToken cancellationToken)
+    private async Task<PipelineResult> RunCoreAsync(PipelineRequest request, CancellationToken cancellationToken, string? customMods)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var layout = InstallLayout.Create(request.AnomalyPath, request.GammaPath);
@@ -114,6 +118,7 @@ public sealed class InstallPipeline
         foreach (var dir in new[] { layout.Root, layout.Tools, layout.Staging, layout.Logs, layout.State, layout.Backups, layout.Cache })
             Directory.CreateDirectory(dir);
         _log.Open(layout.Logs);
+        if (customMods != null) _log.Info("Original custom mod list backup: " + customMods);
 
         var mode = request.Mode;
         BeginStep(mode == PipelineMode.Verify ? "STEP 1 - CHECKING INSTALLATION" : "STEP 1 - PREFLIGHT", 0, 3);

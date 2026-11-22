@@ -49,6 +49,8 @@ To reset one group immediately, use its **Reset to Fresh Defaults** button. To r
 
 A selected or retained ROMEO `.7z` is required. Verify uses the CLI for the base games regardless of the Install page's local archive settings. This repairs files in place; it does not delete saves or purge unrelated mods.
 
+Extra entries absent from the repaired ROMEO profile are merged back automatically, preserving enabled/disabled state and relative order where possible. Required launcher priorities and the repaired profile's own entries take precedence. Missing extra mod folders remain listed but disabled, with a warning in the log. The original list is retained under `_backups/custom-mods-<run-id>/modlist.txt`, including across resume attempts. This preserves profile entries, not edits inside bundled mod files.
+
 The only repair options are **Preserve user.ltx (graphics and controls)** and **Preserve MCM options**. Checked options restore the pre-repair settings; unchecked options apply fresh-install defaults. Original settings are backed up and restored if repair fails or is cancelled.
 
 A fresh repair discards old CLI progress. **Resume Verify** continues the current repair. Older Verify checkpoints and interrupted Install checkpoints restart the repair stages while retaining the original settings backup. You can open Verify directly from a failed installation without clearing saved progress.

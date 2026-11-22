@@ -1,3 +1,8 @@
+## 2.9.8 — 2026-11-21
+
+- Preserve extra ROMEO-profile mod entries during Verify, including enabled state and relative order, while retaining repaired base entries and launcher priorities.
+- Back up the original mod list once per repair, retain missing extras as disabled entries with warnings, and preserve that backup across resumes.
+
 ## 2.9.7 — 2026-11-21
 
 - Replace selective Verify checks and profile-only repair with one CLI reinstall of Anomaly/GAMMA followed by ROMEO/xrRazom and MO2 configuration (Steam AppID 480).
